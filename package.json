@@ -1,0 +1,15 @@
+{
+  "name": "web-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI Agent 驱动的 Web 自动化监控项目",
+  "scripts": {
+    "test": "playwright test",
+    "explore": "npx ts-node src/web/scripts_B/explore_page.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "typescript": "^5.6.0",
+    "ts-node": "^10.9.2"
+  }
+}

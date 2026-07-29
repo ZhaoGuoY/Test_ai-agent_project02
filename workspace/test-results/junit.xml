@@ -1,0 +1,18 @@
+<testsuites id="" name="" tests="6" failures="0" skipped="0" errors="0" time="59.478459">
+<testsuite name="smoke\generated_homepage.spec.ts" timestamp="2026-07-29T09:20:11.955Z" hostname="chromium" tests="3" failures="0" skipped="0" time="101.393" errors="0">
+<testcase name="自动生成 - 首页冒烟测试 › 页面标题不为空" classname="smoke\generated_homepage.spec.ts" time="34.092">
+</testcase>
+<testcase name="自动生成 - 首页冒烟测试 › 元素可见- Skip to content" classname="smoke\generated_homepage.spec.ts" time="33.589">
+</testcase>
+<testcase name="自动生成 - 首页冒烟测试 › 元素可见- English" classname="smoke\generated_homepage.spec.ts" time="33.712">
+</testcase>
+</testsuite>
+<testsuite name="smoke\homepage.spec.ts" timestamp="2026-07-29T09:20:11.955Z" hostname="chromium" tests="3" failures="0" skipped="0" time="72.151" errors="0">
+<testcase name="Makera 首页冒烟测试 › 页面标题包含 Makera" classname="smoke\homepage.spec.ts" time="33.614">
+</testcase>
+<testcase name="Makera 首页冒烟测试 › 页面可见文本包含 Carvera" classname="smoke\homepage.spec.ts" time="15.444">
+</testcase>
+<testcase name="Makera 首页冒烟测试 › 页面存在至少一个 Learn More 链接" classname="smoke\homepage.spec.ts" time="23.093">
+</testcase>
+</testsuite>
+</testsuites>

@@ -1,0 +1,6 @@
+# Python 依赖清单
+#同步所有人一致的依赖版本
+#云端服务器（如 GitHub Actions），云端准备环境。在 CI 配置文件中会写- run: pip install -r requirements.txt
+# 执行 pip install -r requirements.txt 安装
+pyyaml==6.0.2        # 读取 YAML 配置文件
+requests==2.32.3     # HTTP 请求，用于飞书推送
