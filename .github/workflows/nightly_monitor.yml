@@ -7,9 +7,9 @@
 name: Nightly Web Monitor
 
 on:
-  # 定时触发：每天 UTC 6:00（北京时间 14:00）
+  # 定时触发：每天 UTC 0:00（北京时间 8:00）
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '0 0 * * *'
 
   # 手动触发（用于测试和调试）
   workflow_dispatch:
@@ -17,7 +17,7 @@ on:
 # 环境变量（全局可用）
 env:
   FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
-  LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+  DEEPSEEK_API_KEY: ${{ secrets.LLM_API_KEY }}
 
 jobs:
   monitor:
