@@ -5,7 +5,7 @@ Web Monitor 主入口（增量3：Agent 驱动版）
 
 变更说明：
 - 增量2：硬编码流程（generate → test → notify）
-- 增量3：由 MonitorAgent 自主决策执行流程，读取 explore_home 技能
+- 增量3：由 MonitorAgent 自主决策执行流程
 
 执行方式：python scripts/run_monitor.py
 """
@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 
 def main():
     logger.info("=" * 55)
-    logger.info("Web Monitor 增量3 - DeepAgents 自主编排")
+    logger.info("Web Monitor 增量3 - Agent 自主编排")
     logger.info("=" * 55)
 
     # 1. 加载配置
@@ -40,18 +40,17 @@ def main():
     #    内部会：
     #    - 初始化 LLM 模型（DeepSeek 等 OpenAI 兼容）
     #    - 装配工具：generate_test_specs, run_playwright_tests, read_junit_report, push_feishu_report
-    #    - 加载技能：src/web/skills/explore_home/SKILL.md
     #    - 设置 system_prompt 引导决策流程
     logger.info("创建 MonitorAgent...")
     try:
         agent = create_agent("monitor", config)
     except Exception as e:
         logger.error(f"Agent 创建失败: {e}")
-        logger.error("请检查 config/settings.yaml 中的 llm 配置，并确保 deepagents 已安装")
+        logger.error("请检查 config/settings.yaml 中的 llm 配置，并确保 langchain-openai 已安装")
         sys.exit(1)
 
     # 3. 启动 Agent，给定初始任务
-    #    Agent 会根据 system_prompt 和 explore_home 技能自主执行完整流程
+    #    Agent 会根据 system_prompt 自主执行完整流程
     task = (
         f"请对目标网站 {target_url} 执行完整的监控流程：\n"
         f"1. 读取 explore_home 技能了解探索策略\n"

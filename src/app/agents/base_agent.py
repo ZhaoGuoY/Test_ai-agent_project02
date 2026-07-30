@@ -5,7 +5,7 @@ Agent 基类与工厂函数（增量3核心）
 设计模式：工厂函数 + 基类 + 配置驱动
 - BaseAgent: 抽象基类，定义所有 Agent 的统一接口和公共能力
 - create_agent: 工厂函数，根据配置创建具体的 Agent 实例
-- 高内聚低耦合：模型配置、工具集、技能目录均从 config/settings.yaml 驱动
+- 高内聚低耦合：模型配置、工具集均从 config/settings.yaml 驱动
 
 上游：scripts/run_monitor.py 调用工厂函数创建 Agent
 下游：monitor_agent.py / heal_agent.py（增量4）继承 BaseAgent
@@ -14,8 +14,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from deepagents import create_deep_agent
-from deepagents.backends.filesystem import FilesystemBackend
+from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
 from src.core.config_loader import load_config
@@ -27,13 +26,74 @@ logger = get_logger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 
+class _SimpleAgent:
+    """
+    最小 Agent 封装：基于 LangChain bind_tools + 工具调用循环
+
+    替代原 deepagents 的 create_deep_agent，提供相同的 .invoke() 接口。
+    内部自动处理工具调用循环：模型决策 → 执行工具 → 返回结果 → 直到无工具调用。
+    """
+
+    def __init__(self, model_with_tools: Any, system_prompt: str):
+        self.model_with_tools = model_with_tools
+        self.system_prompt = system_prompt
+
+    def invoke(self, inputs: Dict[str, Any], config: Optional[Dict] = None) -> Dict[str, Any]:
+        """
+        执行 Agent 任务
+
+        Args:
+            inputs: 包含 "messages" 键的字典，值为消息列表
+            config: 可选配置（保留接口兼容性）
+
+        Returns:
+            包含 "messages" 键的字典，值为完整消息历史
+        """
+        messages = inputs.get("messages", [])
+
+        # 构建消息列表：system prompt + 历史消息
+        chat_messages = [{"role": "system", "content": self.system_prompt}]
+        chat_messages.extend(messages)
+
+        max_iterations = 20  # 防止无限循环
+        for iteration in range(max_iterations):
+            response = self.model_with_tools.invoke(chat_messages)
+            chat_messages.append(response)
+
+            # 检查是否有工具调用
+            if not hasattr(response, "tool_calls") or not response.tool_calls:
+                break
+
+            # 执行所有工具调用
+            for tool_call in response.tool_calls:
+                tool_name = tool_call["name"]
+                tool_args = tool_call["args"]
+                tool_id = tool_call["id"]
+
+                logger.info(f"[Agent] 调用工具: {tool_name}({tool_args})")
+
+                # 查找并执行工具
+                tool_result = self._execute_tool(tool_name, tool_args)
+                chat_messages.append(ToolMessage(content=str(tool_result), tool_call_id=tool_id))
+
+        return {"messages": chat_messages}
+
+    def _execute_tool(self, tool_name: str, tool_args: dict) -> str:
+        """根据工具名查找并执行对应工具"""
+        # 从绑定的工具列表中查找
+        for t in self.model_with_tools.kwargs.get("tools", []):
+            if t.name == tool_name:
+                return t.invoke(tool_args)
+        return f"未找到工具: {tool_name}"
+
+
 class BaseAgent(ABC):
     """
     Agent 抽象基类
 
     所有具体 Agent（MonitorAgent、HealAgent 等）都应继承此类，
     实现 build_tools() 和 build_system_prompt() 两个抽象方法，
-    由工厂函数统一调用 create_deep_agent 完成装配。
+    由工厂函数统一完成装配。
     """
 
     # 子类必须定义的属性
@@ -53,16 +113,6 @@ class BaseAgent(ABC):
 
         # 初始化模型（从配置读取，支持 DeepSeek 等 OpenAI 兼容模型）
         self.model = self._init_model()
-
-        # 初始化文件系统后端（供 DeepAgents 的 skills 机制使用）
-        # virtual_mode=True 避免直接操作系统文件系统
-        self.backend = FilesystemBackend(
-            root_dir=str(self.project_root),
-            virtual_mode=True
-        )
-
-        # 技能目录：所有 Agent 共享项目级的 skills/ 目录
-        self.skills_dir = (self.project_root / "src" / "web" / "skills" / "explore_home").as_posix()
 
         logger.info(f"[{self.agent_name}] Agent 初始化完成，模型: {self.config['llm']['model']}")
 
@@ -103,7 +153,7 @@ class BaseAgent(ABC):
         构建 Agent 可调用的工具列表
 
         子类必须实现此方法，返回 LangChain 工具或 callable 列表。
-        工具函数需满足 DeepAgents 规范：
+        工具函数需满足 LangChain 工具规范：
         - 有清晰的 docstring（Agent 靠它理解工具用途）
         - 参数有类型注解
         - 返回字符串（Agent 易于解析）
@@ -119,45 +169,27 @@ class BaseAgent(ABC):
         """
         raise NotImplementedError
 
-    def build_skills(self) -> List[str]:
-        """
-        返回该 Agent 需要加载的技能目录
-
-        默认加载项目级 skills/ 目录下的所有技能。
-        子类可重写以筛选特定技能。
-        """
-        return [self.skills_dir]
-
     def create(self):
         """
-        调用 DeepAgents 的 create_deep_agent 完成 Agent 装配
+        使用 LangChain bind_tools 完成 Agent 装配
 
         Returns:
-            编译后的 LangGraph StateGraph Agent 实例
+            _SimpleAgent 实例，支持 .invoke() 接口
 
-        关键参数说明：
-        - model: 预初始化的 ChatOpenAI 实例
-        - tools: 业务工具（generate_specs, run_tests, notify 等）
-        - system_prompt: 引导 Agent 按技能决策的指令
-        - skills: 技能目录路径（SKILL.md 会被渐进式加载）
-        - backend: 文件系统后端，供 skill 文件读写
-        - middleware: 可扩展的中间件钩子（增量4将用到）
+        关键步骤：
+        - 获取子类定义的工具列表
+        - 将工具绑定到 LLM 模型
+        - 封装为可执行的 Agent 实例
         """
         tools = self.build_tools()
         system_prompt = self.build_system_prompt()
-        skills = self.build_skills()
 
-        logger.info(f"[{self.agent_name}] 装配 Agent: tools={len(tools)}, skills={skills}")
+        logger.info(f"[{self.agent_name}] 装配 Agent: tools={len(tools)}")
 
-        agent = create_deep_agent(
-            model=self.model,
-            tools=tools,
-            system_prompt=system_prompt,
-            skills=skills,
-            backend=self.backend,
-        )
+        # 绑定工具到模型，使用 LangChain 原生 bind_tools
+        model_with_tools = self.model.bind_tools(tools)
 
-        return agent
+        return _SimpleAgent(model_with_tools, system_prompt)
 
 
 def create_agent(agent_type: str = "monitor", config: Optional[Dict[str, Any]] = None):
@@ -169,7 +201,7 @@ def create_agent(agent_type: str = "monitor", config: Optional[Dict[str, Any]] =
         config: 配置字典
 
     Returns:
-        编译后的 Agent 实例
+        可执行的 Agent 实例（支持 .invoke() 接口）
     """
     if agent_type == "monitor":
         from src.app.agents.monitor_agent import MonitorAgent
