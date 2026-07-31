@@ -54,7 +54,7 @@ def main():
     #    Agent 会根据 system_prompt 自主执行完整流程
     task = (
         f"请对以下三个站点执行完整的监控流程：\n"
-        f"站点列表：{', '.join(f'{s['name']}({s['url']})' for s in sites)}\n"
+        f"站点列表：{', '.join(s['name'] + '(' + s['url'] + ')' for s in sites)}\n"
         f"1. 读取 explore_home 技能了解探索策略\n"
         f"2. 执行测试脚本（已包含三个站点的用例）\n"
         f"3. 分析结果\n"
