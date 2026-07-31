@@ -34,9 +34,10 @@ class _SimpleAgent:
     内部自动处理工具调用循环：模型决策 → 执行工具 → 返回结果 → 直到无工具调用。
     """
 
-    def __init__(self, model_with_tools: Any, system_prompt: str):
+    def __init__(self, model_with_tools: Any, system_prompt: str, tools: Optional[List[Any]] = None):
         self.model_with_tools = model_with_tools
         self.system_prompt = system_prompt
+        self._tools = tools or []  # 保存原始工具列表，供 _execute_tool 查找
 
     def invoke(self, inputs: Dict[str, Any], config: Optional[Dict] = None) -> Dict[str, Any]:
         """
@@ -80,10 +81,10 @@ class _SimpleAgent:
 
     def _execute_tool(self, tool_name: str, tool_args: dict) -> str:
         """根据工具名查找并执行对应工具"""
-        # 从绑定的工具列表中查找
-        for t in self.model_with_tools.kwargs.get("tools", []):
-            if t.name == tool_name:
-                return t.invoke(tool_args)
+        for t in self._tools:
+            name = getattr(t, 'name', None) or getattr(t, '__name__', None)
+            if name == tool_name:
+                return t.invoke(tool_args) if hasattr(t, 'invoke') else t(**tool_args)
         return f"未找到工具: {tool_name}"
 
 
@@ -189,7 +190,7 @@ class BaseAgent(ABC):
         # 绑定工具到模型，使用 LangChain 原生 bind_tools
         model_with_tools = self.model.bind_tools(tools)
 
-        return _SimpleAgent(model_with_tools, system_prompt)
+        return _SimpleAgent(model_with_tools, system_prompt, tools)
 
 
 def create_agent(agent_type: str = "monitor", config: Optional[Dict[str, Any]] = None):
