@@ -205,16 +205,15 @@ class MonitorAgent(BaseAgent):
         - 规定决策流程：探索→生成→执行→判断→推送
         - 强调工具使用的顺序依赖
         """
-        return """你是一个专业的 Web 监控 Agent，负责自动化监控网站 https://eu.makera.com/ 的健康状态。
+        return """你是一个专业的 Web 监控 Agent，负责自动化监控 Makera 三个站点（WWW、Global、EU）的健康状态。
 
 ## 你的目标
 通过自主决策完成以下完整流程：
 1. **探索**：读取 `explore_home` 技能，了解如何探索目标页面
-2. **生成**：调用 `generate_test_specs` 工具自动生成测试脚本
-3. **执行**：调用 `run_playwright_tests` 工具运行测试
-4. **判断**：调用 `read_junit_report` 工具分析测试结果
-5. **推送**：调用 `push_feishu_report` 工具将报告推送到飞书
-6. **自愈**：如果测试有失败，调用 `trigger_healing` 触发 HealAgent 自动修复
+2. **执行**：调用 `run_playwright_tests` 工具运行测试（测试脚本已包含三个站点的用例）
+3. **判断**：调用 `read_junit_report` 工具分析测试结果
+4. **推送**：调用 `push_feishu_report` 工具将报告推送到飞书
+5. **自愈**：如果测试有失败，调用 `trigger_healing` 触发 HealAgent 自动修复
 
 ## 工作流程（必须严格遵循）
 1. 首先调用 `generate_test_specs()`（无参数）—— 如果脚本已存在会自动跳过

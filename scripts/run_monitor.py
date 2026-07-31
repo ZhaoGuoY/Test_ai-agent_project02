@@ -30,8 +30,9 @@ def main():
     # 1. 加载配置
     try:
         config = load_config()
-        target_url = config["target"]["url"]
-        logger.info(f"目标网站: {target_url}")
+        sites = config["target"]["sites"]
+        site_names = ", ".join(s["name"] for s in sites)
+        logger.info(f"目标站点: {site_names}")
     except Exception as e:
         logger.error(f"加载配置失败: {e}")
         sys.exit(1)
@@ -52,12 +53,12 @@ def main():
     # 3. 启动 Agent，给定初始任务
     #    Agent 会根据 system_prompt 自主执行完整流程
     task = (
-        f"请对目标网站 {target_url} 执行完整的监控流程：\n"
+        f"请对以下三个站点执行完整的监控流程：\n"
+        f"站点列表：{', '.join(f'{s['name']}({s['url']})' for s in sites)}\n"
         f"1. 读取 explore_home 技能了解探索策略\n"
-        f"2. 生成测试脚本\n"
-        f"3. 执行测试\n"
-        f"4. 分析结果\n"
-        f"5. 推送飞书报告"
+        f"2. 执行测试脚本（已包含三个站点的用例）\n"
+        f"3. 分析结果\n"
+        f"4. 推送飞书报告（需包含各站点结果）"
     )
 
     logger.info("Agent 开始执行任务...")

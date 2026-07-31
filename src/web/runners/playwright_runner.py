@@ -27,9 +27,9 @@ class PlaywrightRunner:
             logger.warning("未在 PATH 中找到 npx，尝试使用默认命令")
 
     def run_tests(self, test_dir: Optional[str] = None) -> Tuple[int, str, str]:
-        """执行 Playwright 测试（同增量1）"""
+        """执行 Playwright 测试（串行单进程，避免多站点并发冲突）"""
         npx = self.npx_path or "npx"
-        cmd = [npx, "playwright", "test"]
+        cmd = [npx, "playwright", "test", "--workers=1"]
         if test_dir:
             cmd.append(test_dir)
 

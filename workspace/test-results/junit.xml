@@ -1,18 +1,52 @@
-<testsuites id="" name="" tests="6" failures="0" skipped="0" errors="0" time="80.727849">
-<testsuite name="smoke\generated_homepage.spec.ts" timestamp="2026-07-31T02:11:07.037Z" hostname="chromium" tests="3" failures="0" skipped="0" time="131.648" errors="0">
-<testcase name="自动生成 - 首页冒烟测试 › 页面标题不为空" classname="smoke\generated_homepage.spec.ts" time="44.208">
+<testsuites id="" name="" tests="3" failures="0" skipped="0" errors="1" time="334.717029">
+<testsuite name="smoke\generated_homepage.spec.ts" timestamp="2026-07-31T13:49:50.459Z" hostname="chromium" tests="3" failures="0" skipped="0" time="329.985" errors="1">
+<testcase name="US 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\generated_homepage.spec.ts" time="190.109">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|..\..\test-results\smoke-generated_homepage-US-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\video.webm]]
+
+[[ATTACHMENT|..\..\test-results\smoke-generated_homepage-US-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\error-context.md]]
+
+[[ATTACHMENT|..\..\test-results\smoke-generated_homepage-US-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\trace.zip]]
+]]>
+</system-out>
+<error message="page.goto: Timeout 180000ms exceeded." type="TimeoutError">
+<![CDATA[  [chromium] › smoke\generated_homepage.spec.ts:147:9 › US 站点 › 商品详情页 Add to cart 按钮稳定展示 ───────────
+
+    TimeoutError: page.goto: Timeout 180000ms exceeded.
+    Call log:
+      - navigating to "https://www.makera.com/products/carvera", waiting until "domcontentloaded"
+
+
+      100 |   for (let attempt = 0; attempt < 3; attempt++) {
+      101 |     // 直接导航到目标URL（每次重试都重新导航，确保域名正确）
+    > 102 |     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 180000 });
+          |                ^
+      103 |     await dismissPopup(page);
+      104 |
+      105 |     // 检查当前域名是否匹配目标站点
+        at setupPage (D:\Test_Ai_agent_project\Python_agent_projectZ\Test_ai-agent_project02\src\web\testcases\smoke\generated_homepage.spec.ts:102:16)
+        at D:\Test_Ai_agent_project\Python_agent_projectZ\Test_ai-agent_project02\src\web\testcases\smoke\generated_homepage.spec.ts:148:13
+
+    attachment #1: video (video/webm) ──────────────────────────────────────────────────────────────
+    ..\..\..\test-results\smoke-generated_homepage-US-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ..\..\..\test-results\smoke-generated_homepage-US-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ..\..\..\test-results\smoke-generated_homepage-US-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace ..\..\..\test-results\smoke-generated_homepage-US-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</error>
 </testcase>
-<testcase name="自动生成 - 首页冒烟测试 › 元素可见- Skip to content" classname="smoke\generated_homepage.spec.ts" time="39.872">
+<testcase name="EU 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\generated_homepage.spec.ts" time="78.504">
 </testcase>
-<testcase name="自动生成 - 首页冒烟测试 › 元素可见- English" classname="smoke\generated_homepage.spec.ts" time="47.568">
-</testcase>
-</testsuite>
-<testsuite name="smoke\homepage.spec.ts" timestamp="2026-07-31T02:11:07.037Z" hostname="chromium" tests="3" failures="0" skipped="0" time="111.286" errors="0">
-<testcase name="Makera 首页冒烟测试 › 页面标题包含 Makera" classname="smoke\homepage.spec.ts" time="47.519">
-</testcase>
-<testcase name="Makera 首页冒烟测试 › 页面可见文本包含 Carvera" classname="smoke\homepage.spec.ts" time="33.881">
-</testcase>
-<testcase name="Makera 首页冒烟测试 › 页面存在至少一个 Learn More 链接" classname="smoke\homepage.spec.ts" time="29.886">
+<testcase name="Global 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\generated_homepage.spec.ts" time="61.372">
 </testcase>
 </testsuite>
 </testsuites>

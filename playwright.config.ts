@@ -18,12 +18,15 @@ export default defineConfig({
   // 测试文件目录：所有 .spec.ts 文件存放位置
   testDir: './src/web/testcases',
 
-  // 超时设置（毫秒）— Shopify 网站加载较慢，适当放宽
+  // 超时设置（毫秒）— Makera 网站加载较慢，适当放宽
   timeout: 300_000,
-  expect: { timeout: 10_000 },
+  expect: { timeout: 30_000 },
 
-  // 完全并行执行
-  fullyParallel: true,
+  // 串行执行（避免多站点并发导致网络/IP跳转冲突）
+  fullyParallel: false,
+
+  // 单工作进程（保证测试稳定性，避免资源竞争）
+  workers: 1,
 
   // CI 环境下重试次数（本地不重试）
   retries: process.env.CI ? 2 : 0,

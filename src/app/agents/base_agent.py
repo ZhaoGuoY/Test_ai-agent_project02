@@ -110,7 +110,10 @@ class BaseAgent(ABC):
         """
         self.config = config or load_config()
         self.project_root = PROJECT_ROOT
-        self.target_url = self.config["target"]["url"]
+        # 兼容新配置结构：target.sites 列表
+        sites = self.config["target"].get("sites", [])
+        self.target_sites = sites
+        self.target_url = sites[0]["url"] if sites else ""
 
         # 初始化模型（从配置读取，支持 DeepSeek 等 OpenAI 兼容模型）
         self.model = self._init_model()

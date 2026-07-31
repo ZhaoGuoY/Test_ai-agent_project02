@@ -70,8 +70,9 @@ def _resolve_env_vars(obj: Any) -> None:
 
 # 模块级便捷函数，直接获取常用配置
 def get_target_url() -> str:
-    """获取目标测试 URL"""
-    return load_config()["target"]["url"]
+    """获取目标测试 URL（返回第一个站点）"""
+    sites = load_config()["target"].get("sites", [])
+    return sites[0]["url"] if sites else ""
 
 
 def get_feishu_webhook() -> str:

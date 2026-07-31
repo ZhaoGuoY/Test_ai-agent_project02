@@ -51,12 +51,12 @@ class FeishuNotifier:
             junit_path: junit.xml 文件路径
 
         Returns:
-            测试统计字典，包含 tests, failures, errors, skipped, pass 等
+            测试统计字典，包含 tests, failures, errors, skipped, pass, site_stats 等
         """
         junit_path = Path(junit_path)
         if not junit_path.exists():
             logger.warning(f"JUnit 报告不存在: {junit_path}")
-            return {"tests": 0, "failures": 0, "errors": 0, "skipped": 0, "pass": 0}
+            return {"tests": 0, "failures": 0, "errors": 0, "skipped": 0, "pass": 0, "site_stats": {}}
 
         tree = ET.parse(junit_path)
         root = tree.getroot()
@@ -74,12 +74,29 @@ class FeishuNotifier:
         # 计算通过数 = 总数 - 失败 - 错误 - 跳过
         passed = tests - failures - errors - skipped
 
+        # 按站点分组统计（从 testcase name 提取站点名）
+        site_stats: Dict[str, Dict[str, int]] = {}
+        for tc in root.iter("testcase"):
+            name = tc.get("name", "")
+            # Playwright JUnit: name 格式为 "站点名 › 用例名"
+            site_name = name.split("›")[0].strip() if "›" in name else "未知站点"
+            if site_name not in site_stats:
+                site_stats[site_name] = {"total": 0, "passed": 0, "failed": 0}
+            site_stats[site_name]["total"] += 1
+            # 检查是否有 failure 或 error 子元素
+            has_failure = tc.find("failure") is not None or tc.find("error") is not None
+            if has_failure:
+                site_stats[site_name]["failed"] += 1
+            else:
+                site_stats[site_name]["passed"] += 1
+
         stats = {
             "tests": tests,
             "failures": failures,
             "errors": errors,
             "skipped": skipped,
             "pass": passed,
+            "site_stats": site_stats,
         }
 
         logger.info(f"测试统计: {stats}")
@@ -110,6 +127,17 @@ class FeishuNotifier:
         else:
             header_color = "red"
             header_text = f"❌ {title} - 存在失败 - Makera"
+
+        # 构建各站点结果明细
+        site_stats = stats.get("site_stats", {})
+        site_lines = []
+        if site_stats:
+            for site_name, s in site_stats.items():
+                status_icon = "✅" if s["failed"] == 0 else "❌"
+                site_lines.append(f"{status_icon} **{site_name}**: {s['passed']}/{s['total']} 通过")
+            site_detail = "\n".join(site_lines)
+        else:
+            site_detail = "无站点明细"
 
         card = {
             "config": {"wide_screen_mode": True},
@@ -153,6 +181,16 @@ class FeishuNotifier:
                             }
                         }
                     ]
+                },
+                {
+                    "tag": "hr"
+                },
+                {
+                    "tag": "div",
+                    "text": {
+                        "content": f"**各站点结果**\n{site_detail}",
+                        "tag": "lark_md"
+                    }
                 },
                 {
                     "tag": "hr"
