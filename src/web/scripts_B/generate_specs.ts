@@ -16,11 +16,12 @@
 import { chromium, Browser, Page, ElementHandle } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 
 const OUTPUT_DIR = path.resolve(__dirname, '../testcases/smoke');
 const OUTPUT_FILE = path.join(OUTPUT_DIR, 'generated_homepage.spec.ts');
-const MAX_TESTS = 3;             // 最多收集3个元素
-const MAX_ELEMENT_TESTS = 2;   // 最多生成2个元素测试（+1标题测试=共3条）
+const MAX_TESTS = 5;             // 最多收集5个元素
+const MAX_ELEMENT_TESTS = 4;   // 最多生成4个元素测试（+1标题测试=共5条）
 const TIMEOUT = 100000;         // 页面加载超时100秒
 
 interface ElementInfo {
@@ -93,7 +94,7 @@ function generateTestCode(url: string, elements: ElementInfo[]): string {
 
   // 1. 标题测试
   lines.push(`  test('页面标题不为空', async ({ page }) => {`);
-  lines.push(`    await page.goto('/', { waitUntil: 'domcontentloaded' });`);
+  lines.push(`    await page.goto('${url}', { waitUntil: 'domcontentloaded' });`);
   lines.push(`    const title = await page.title();`);
   lines.push(`    expect(title).toBeTruthy();`);
   lines.push(`  });`);
@@ -109,7 +110,7 @@ function generateTestCode(url: string, elements: ElementInfo[]): string {
       : `元素可见: <${el.tag.toLowerCase()}>`;
 
     lines.push(`  test('${escapeTestName(testName)}', async ({ page }) => {`);
-    lines.push(`    await page.goto('/', { waitUntil: 'domcontentloaded' });`);
+    lines.push(`    await page.goto('${url}', { waitUntil: 'domcontentloaded' });`);
 
     // 生成语义定位器
     let locator: string;
@@ -140,6 +141,22 @@ function escapeTestName(s: string): string {
   return s.replace(/['"]/g, '').replace(/[:]/g, '-').replace(/[\r\n]+/g, ' ');
 }
 
+/**
+ * 清理残留的 Chromium 进程，防止阻塞新浏览器启动
+ * 无论是否有残留进程，都会静默处理，不影响后续流程
+ */
+function killLingeringChromium(): void {
+  const isWindows = process.platform === 'win32';
+  const cmd = isWindows
+    ? 'taskkill /F /IM chrome.exe 2>nul & taskkill /F /IM chromium.exe 2>nul'
+    : 'pkill -f chromium 2>/dev/null';
+  try {
+    execSync(cmd, { stdio: 'ignore', timeout: 5000 });
+  } catch {
+    // 无残留进程时命令会返回非零，静默忽略
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   if (args.length < 1) {
@@ -155,14 +172,35 @@ async function main() {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
-  const browser: Browser = await chromium.launch({ headless: true });
+  // 清理残留浏览器进程，防止阻塞启动
+  killLingeringChromium();
+
+  console.log(`[generate_specs] 正在启动浏览器...`);
+  const launchPromise = chromium.launch({
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-gpu',
+      '--no-first-run',
+      '--no-zygote',
+      '--disable-dev-shm-usage',
+    ],
+  });
+  const launchTimeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('浏览器启动超时（20秒），可能有残留进程占用')), 20000)
+  );
+  const browser: Browser = await Promise.race([launchPromise, launchTimeout]);
   try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await context.newPage();
 
     // 设置超时并导航
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
-    console.log('[generate_specs] 页面加载完成');
+
+    // 等待 10 秒让 Shopify IP 跳转完成
+    await page.waitForTimeout(10_000);
+    console.log('[generate_specs] 页面加载完成，IP 跳转等待结束');
+    console.log(`[generate_specs] 目标主机: ${new URL(url).hostname}, 当前主机: ${new URL(page.url()).hostname}`);
 
     // 收集元素
     const elements = await collectElements(page);

@@ -15,7 +15,7 @@
  * - 只修复指定的失败用例，不重新生成整个文件
  * - 使用正则替换，避免 AST 解析开销
  */
-import { chromium, Browser } from 'playwright';
+import { chromium, Browser, Page } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
@@ -30,12 +30,51 @@ interface ElementInfo {
 }
 
 /**
+ * 等待页面 URL 稳定（处理 Shopify IP 跳转）
+ * 导航后等待 10 秒让 IP 跳转完成，然后每 10 秒检查一次，最多等待 2 分钟
+ * @returns true=URL已稳定，false=超时未稳定
+ */
+async function waitForStableUrl(page: Page, targetUrl: string): Promise<boolean> {
+  const targetHost = new URL(targetUrl).hostname;
+  const MAX_WAIT_MS = 120_000;  // 2 分钟上限
+  const CHECK_INTERVAL_MS = 10_000;
+  let elapsed = 0;
+
+  await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 180000 });
+  await page.waitForTimeout(10_000);
+  elapsed += 10_000;
+
+  while (elapsed < MAX_WAIT_MS) {
+    const currentHost = new URL(page.url()).hostname;
+    if (currentHost === targetHost) {
+      console.log(`[heal_specs] ✅ URL 已稳定: ${page.url()}（耗时 ${elapsed / 1000}s）`);
+      return true;
+    }
+    console.log(`[heal_specs]  URL 未稳定，当前: ${page.url()}，目标主机: ${targetHost}，已等待 ${elapsed / 1000}s`);
+    if (currentHost !== targetHost) {
+      await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 180000 });
+    }
+    await page.waitForTimeout(CHECK_INTERVAL_MS);
+    elapsed += CHECK_INTERVAL_MS;
+  }
+
+  console.error(`[heal_specs] ❌ 超时（${MAX_WAIT_MS / 1000}s），URL 仍未稳定: ${page.url()}`);
+  return false;
+}
+
+/**
  * 收集页面中所有可见的可交互元素
  */
 async function collectElements(browser: Browser, url: string): Promise<ElementInfo[]> {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const page = await context.newPage();
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
+
+  // 等待 IP 跳转稳定后再收集元素
+  const stable = await waitForStableUrl(page, url);
+  if (!stable) {
+    await context.close();
+    throw new Error(`URL 未稳定，无法收集元素: ${url}`);
+  }
 
   const elements = await page.evaluate(() => {
     const interactiveTags = ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'H1', 'H2', 'H3', 'P'];

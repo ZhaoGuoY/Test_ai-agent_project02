@@ -1,52 +1,10 @@
-<testsuites id="" name="" tests="3" failures="0" skipped="0" errors="1" time="334.717029">
-<testsuite name="smoke\generated_homepage.spec.ts" timestamp="2026-07-31T13:49:50.459Z" hostname="chromium" tests="3" failures="0" skipped="0" time="329.985" errors="1">
-<testcase name="US 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\generated_homepage.spec.ts" time="190.109">
+<testsuites id="" name="" tests="1" failures="0" skipped="0" errors="0" time="44.169267">
+<testsuite name="smoke\generated_homepage.spec.ts" timestamp="2026-08-03T12:08:30.015Z" hostname="chromium" tests="1" failures="0" skipped="0" time="40.292" errors="0">
+<testcase name="US 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\generated_homepage.spec.ts" time="40.292">
 <system-out>
-<![CDATA[
-[[ATTACHMENT|..\..\test-results\smoke-generated_homepage-US-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\video.webm]]
-
-[[ATTACHMENT|..\..\test-results\smoke-generated_homepage-US-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\error-context.md]]
-
-[[ATTACHMENT|..\..\test-results\smoke-generated_homepage-US-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\trace.zip]]
+<![CDATA[[waitForStableUrl] ✅ URL 已稳定: https://www.makera.com/products/carvera
 ]]>
 </system-out>
-<error message="page.goto: Timeout 180000ms exceeded." type="TimeoutError">
-<![CDATA[  [chromium] › smoke\generated_homepage.spec.ts:147:9 › US 站点 › 商品详情页 Add to cart 按钮稳定展示 ───────────
-
-    TimeoutError: page.goto: Timeout 180000ms exceeded.
-    Call log:
-      - navigating to "https://www.makera.com/products/carvera", waiting until "domcontentloaded"
-
-
-      100 |   for (let attempt = 0; attempt < 3; attempt++) {
-      101 |     // 直接导航到目标URL（每次重试都重新导航，确保域名正确）
-    > 102 |     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 180000 });
-          |                ^
-      103 |     await dismissPopup(page);
-      104 |
-      105 |     // 检查当前域名是否匹配目标站点
-        at setupPage (D:\Test_Ai_agent_project\Python_agent_projectZ\Test_ai-agent_project02\src\web\testcases\smoke\generated_homepage.spec.ts:102:16)
-        at D:\Test_Ai_agent_project\Python_agent_projectZ\Test_ai-agent_project02\src\web\testcases\smoke\generated_homepage.spec.ts:148:13
-
-    attachment #1: video (video/webm) ──────────────────────────────────────────────────────────────
-    ..\..\..\test-results\smoke-generated_homepage-US-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\video.webm
-    ────────────────────────────────────────────────────────────────────────────────────────────────
-
-    Error Context: ..\..\..\test-results\smoke-generated_homepage-US-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\error-context.md
-
-    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
-    ..\..\..\test-results\smoke-generated_homepage-US-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\trace.zip
-    Usage:
-
-        npx playwright show-trace ..\..\..\test-results\smoke-generated_homepage-US-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\trace.zip
-
-    ────────────────────────────────────────────────────────────────────────────────────────────────
-]]>
-</error>
-</testcase>
-<testcase name="EU 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\generated_homepage.spec.ts" time="78.504">
-</testcase>
-<testcase name="Global 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\generated_homepage.spec.ts" time="61.372">
 </testcase>
 </testsuite>
 </testsuites>

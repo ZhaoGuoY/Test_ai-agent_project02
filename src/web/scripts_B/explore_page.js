@@ -1,14 +1,47 @@
 const { chromium } = require('playwright');
+const { execSync } = require('child_process');
+
+/**
+ * 清理残留的 Chromium 进程，防止阻塞新浏览器启动
+ * 无论是否有残留进程，都会静默处理，不影响后续流程
+ */
+function killLingeringChromium() {
+  const isWindows = process.platform === 'win32';
+  const cmd = isWindows
+    ? 'taskkill /F /IM chrome.exe 2>nul & taskkill /F /IM chromium.exe 2>nul'
+    : 'pkill -f chromium 2>/dev/null';
+  try {
+    execSync(cmd, { stdio: 'ignore', timeout: 5000 });
+  } catch {
+    // 无残留进程时命令会返回非零，静默忽略
+  }
+}
 
 async function main() {
-  const url = 'https://eu.makera.com/';
-  const browser = await chromium.launch({
+  const url = 'https://www.makera.com/products/carvera';
+
+  // 清理残留浏览器进程，防止阻塞启动
+  killLingeringChromium();
+
+  console.log(`[explore_page] 正在启动浏览器...`);
+  const launchPromise = chromium.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-gpu', '--no-first-run', '--no-zygote', '--disable-dev-shm-usage'],
   });
+  const launchTimeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('浏览器启动超时（20秒），可能有残留进程占用')), 20000)
+  );
+  const browser = await Promise.race([launchPromise, launchTimeout]);
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const page = await context.newPage();
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 180000 });
+
+  // 等待 10 秒让 Shopify IP 跳转完成
+  await page.waitForTimeout(10000);
+  console.log('\n=== URL 稳定性检查 ===');
+  console.log(`目标主机: ${new URL(url).hostname}`);
+  console.log(`当前主机: ${new URL(page.url()).hostname}`);
+  console.log(`匹配: ${new URL(page.url()).hostname === new URL(url).hostname ? '✅' : '❌'}`);
 
   // 获取页面标题
   const title = await page.title();

@@ -172,12 +172,10 @@ class HealAgent(BaseAgent):
 
     def _build_site_url_map(self) -> str:
         """
-        构建多站点 URL 映射表（供 system prompt 使用）
+        构建站点 URL 映射表（供 system prompt 使用）
 
         Returns:
-            格式化的站点映射字符串，例如：
-            - US -> https://www.makera.com/products/carvera
-            - EU -> https://eu.makera.com/products/carvera-air
+            格式化的站点映射字符串
         """
         lines = []
         for site in self.target_sites:
@@ -192,50 +190,43 @@ class HealAgent(BaseAgent):
 
         核心逻辑：
         1. 获取失败用例列表（只处理失败的，已通过的跳过）
-        2. 根据失败用例所属站点选择正确 URL
-        3. 逐个修复（调用 heal_single_case）
-        4. 重新测试
-        5. 判断是否全部通过，若否且未达最大重试次数，继续修复
-        6. 返回最终结果
+        2. 使用配置的 URL 进行修复
+        3. 重新测试
+        4. 判断是否全部通过，若否且未达最大重试次数，继续修复
+        5. 返回最终结果
         """
         site_url_map = self._build_site_url_map()
         return f"""你是一个专业的自愈 Agent，负责自动修复失败的 Playwright 测试用例。
 
-## 多站点 URL 映射（必须根据失败用例所属站点选择正确 URL）
+## 目标站点 URL 映射
 {site_url_map}
 
 ## 你的目标
 当 MonitorAgent 检测到测试失败后，你将被调用。你需要：
 1. 读取失败用例列表（调用 `get_current_failures`）
 2. **只对失败的用例执行自愈，已通过的用例绝对不要重跑或修改**
-3. 根据失败用例名称中的站点标识（US/EU/Global），从上方 URL 映射中选择正确的 URL
-4. 对每个失败用例调用 `heal_single_case(url="正确站点的URL", failed_test_name="...", error_message="...")`
-5. 调用 `run_tests_and_get_failures` 重新执行测试
-6. 调用 `check_if_all_passed` 检查是否全部通过
-7. 如果仍有失败且重试次数 < {self.MAX_RETRIES}，继续修复
-8. 达到最大重试次数后，无论是否全部通过，返回最终结果
+3. 使用上方 URL 映射中的 URL 调用 `heal_single_case`
+4. 调用 `run_tests_and_get_failures` 重新执行测试
+5. 调用 `check_if_all_passed` 检查是否全部通过
+6. 如果仍有失败且重试次数 < {self.MAX_RETRIES}，继续修复
+7. 达到最大重试次数后，无论是否全部通过，返回最终结果
 
 ## 工作流程（必须严格遵循）
 1. 调用 `get_current_failures` 获取初始失败列表
-2. 如果列表为空，直接报告"无需修复，全部通过"
-3. **只遍历失败用例**，根据用例名称中的站点关键词匹配正确 URL：
-   - 用例名包含 "US" → 使用 US 站 URL
-   - 用例名包含 "EU" → 使用 EU 站 URL
-   - 用例名包含 "Global" → 使用 Global 站 URL
-   - 无法识别时 → 使用第一个站点 URL 作为兜底
-4. 调用 `heal_single_case(url="匹配到的URL", failed_test_name="...", error_message="...")`
+2. 如果列表为空，直接报告“无需修复，全部通过”
+3. **只遍历失败用例**，使用 URL 映射中的 URL 调用 `heal_single_case(url="...", failed_test_name="...", error_message="...")`
    - error_message 从失败用例的 message 字段获取，用于判断失败类型
    - 非定位器失效的错误会被自动跳过
-5. 全部修复后，调用 `run_tests_and_get_failures` 重新测试
-6. 调用 `check_if_all_passed` 判断结果
-7. 如果还有失败且重试次数 < {self.MAX_RETRIES}，回到步骤3
-8. 达到最大重试次数后，报告最终状态
+4. 全部修复后，调用 `run_tests_and_get_failures` 重新测试
+5. 调用 `check_if_all_passed` 判断结果
+6. 如果还有失败且重试次数 < {self.MAX_RETRIES}，回到步骤3
+7. 达到最大重试次数后，报告最终状态
 
 ## 输出要求
 - 用中文汇报
 - 包含：修复的用例数、重试次数、最终通过/失败情况
-- 如果最终全部通过，标记"自愈成功"
-- 如果仍有失败，标记"自愈失败，需人工介入"
+- 如果最终全部通过，标记“自愈成功”
+- 如果仍有失败，标记“自愈失败，需人工介入”
 - 简洁明了，不超过 300 字
 
 ## 注意事项
@@ -243,5 +234,4 @@ class HealAgent(BaseAgent):
 - 每次修复后都要重新运行测试，因为修复可能影响其他用例
 - 如果 `heal_single_case` 返回失败，记录该用例无法修复
 - 不要重复修复同一个用例超过一次（除非它在重新测试后仍然失败）
-- 多站点场景下，务必根据用例名称匹配正确的站点 URL，不要混用
 """

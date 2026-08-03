@@ -7,11 +7,7 @@
 target:
   sites:
     - name: US
-      url: "https://www.makera.com/"
-    - name: Global
-      url: "https://global.makera.com/"
-    - name: EU
-      url: "https://eu.makera.com/"
+      url: "https://www.makera.com/products/carvera"
   title_contains: "Makera"   # 用于增量1冒烟测试断言
 
 # Playwright 相关配置

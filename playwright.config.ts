@@ -43,13 +43,19 @@ export default defineConfig({
   // 全局测试设置
   use: {
     // 目标测试网站（来自增量需求）
-    baseURL: 'https://eu.makera.com/',
+    baseURL: 'https://www.makera.com/products/carvera',
 
-    // 无头模式运行（CI 环境必须为 true）
-    headless: true,
+    // 有头模式运行（本地调试可见浏览器，CI 环境自动无头）
+    headless: process.env.CI ? true : false,
 
     // 视口大小
     viewport: { width: 1280, height: 720 },
+
+    // 地理位置设为美国，防止 Shopify IP 跳转导致白屏/重定向
+    geolocation: { longitude: -122.4194, latitude: 37.7749 },
+    permissions: ['geolocation'],
+    locale: 'en-US',
+    timezoneId: 'America/Los_Angeles',
 
     // 失败时截图和录像
     screenshot: 'only-on-failure',

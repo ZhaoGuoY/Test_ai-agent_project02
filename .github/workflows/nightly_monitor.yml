@@ -1,5 +1,5 @@
 # .github/workflows/nightly_monitor.yml
-# 作用：每天 UTC 6:00（北京时间 14:00）自动执行 Web 监控全流程
+# 作用：每天北京时间 6:00 自动执行 Web 监控全流程（cron 设为 UTC 22:00 补偿 GitHub 调度延迟）
 # 触发方式：schedule 定时 + workflow_dispatch 手动触发
 # 依赖：Node.js 18、Python 3.11、Playwright Chromium
 # 环境变量：FEISHU_WEBHOOK_URL、LLM_API_KEY（需在 GitHub Secrets 中配置）
@@ -11,9 +11,9 @@ on:
   push:
     branches: [ "master" ]
 
-  # 定时触发：每天 UTC 0:00（北京时间 8:00）
+  # 定时触发：UTC 22:00（北京时间次日 6:00），补偿 GitHub 调度延迟约 3-4 小时后实际约 9:00+ 执行
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 22 * * *'
 
   # 手动触发（用于测试和调试）
   workflow_dispatch:

@@ -58,7 +58,12 @@ class _SimpleAgent:
 
         max_iterations = 20  # 防止无限循环
         for iteration in range(max_iterations):
-            response = self.model_with_tools.invoke(chat_messages)
+            try:
+                response = self.model_with_tools.invoke(chat_messages)
+            except Exception as e:
+                logger.error(f"[Agent] LLM 调用失败（迭代 {iteration + 1}）: {e}")
+                chat_messages.append({"role": "system", "content": f"LLM 调用失败: {e}，请尝试简化任务或重试"})
+                continue
             chat_messages.append(response)
 
             # 检查是否有工具调用

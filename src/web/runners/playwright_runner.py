@@ -56,6 +56,15 @@ class PlaywrightRunner:
 
         except subprocess.TimeoutExpired as e:
             logger.error(f"命令执行超时: {e}")
+            # 强制清理残留进程，无论成功与否都会执行
+            try:
+                if sys.platform == 'win32':
+                    subprocess.run(['taskkill', '/F', '/IM', 'chrome.exe'], capture_output=True, timeout=5)
+                    subprocess.run(['taskkill', '/F', '/IM', 'chromium.exe'], capture_output=True, timeout=5)
+                else:
+                    subprocess.run(['pkill', '-f', 'chromium'], capture_output=True, timeout=5)
+            except Exception:
+                pass
             return -1, "", "TimeoutExpired"
         except FileNotFoundError as e:
             logger.error(f"未找到 npx 命令: {e}")
