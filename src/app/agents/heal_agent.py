@@ -20,6 +20,7 @@ HealAgent：自愈 Agent（增量4）专注自愈，传入失败列表，专属 
 from typing import Any, List, Dict, Optional
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 from langchain_core.tools import tool
@@ -84,8 +85,9 @@ class HealAgent(BaseAgent):
 
             script_path = self.project_root / "src" / "web" / "scripts_B" / "heal_specs.ts"
 
-            # 使用 node_modules/.bin/ts-node.cmd 而非 npx（npx 在 Windows 上可能不可用）
-            ts_node_path = self.project_root / "node_modules" / ".bin" / "ts-node.cmd"
+            # 跨平台兼容：Windows 用 ts-node.cmd，Linux/Mac 用 ts-node
+            ts_node_name = "ts-node.cmd" if sys.platform == "win32" else "ts-node"
+            ts_node_path = self.project_root / "node_modules" / ".bin" / ts_node_name
             cmd = [
                 str(ts_node_path),
                 str(script_path),
