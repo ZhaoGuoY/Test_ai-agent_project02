@@ -1,17 +1,18 @@
 # src/app/agents/monitor_agent.py
 """
-MonitorAgent：Web 监控主 Agent（增量3）
+MonitorAgent：Web 监控主 Agent（增量3 + 多站点分离架构）
 
 职责：
 1. 读取 explore_home 技能（SKILL.md）获取探索策略
-2. 自主决策调用工具：生成测试脚本 → 执行测试 → 解析结果 → 推送飞书
-3. 替代增量2中 scripts/run_monitor.py 的硬编码流程
+2. 按站点遍历：检查脚本 → 缺失则生成 → 执行测试 → 解析结果 → 自愈 → 推送飞书
+3. 每个站点独立 spec 文件（us/eu/global_carvera.spec.ts），故障隔离
 
 上游：scripts/run_monitor.py 调用 create_agent("monitor")
 下游：通过工具调用 PlaywrightRunner 和 FeishuNotifier
 """
 import json
-from typing import Any, List
+from pathlib import Path
+from typing import Any, List, Optional
 
 from langchain_core.tools import tool
 
@@ -25,93 +26,106 @@ logger = get_logger(__name__)
 
 
 class MonitorAgent(BaseAgent):
-    """Web 监控 Agent"""
+    """Web 监控 Agent — 多站点分离架构"""
 
     agent_name = "monitor"
-    agent_description = "自主执行 Web 监控：探索页面 → 生成脚本 → 执行测试 → 推送报告"
+    agent_description = "自主执行 Web 监控：按站点遍历 → 生成脚本 → 执行测试 → 自愈 → 推送报告"
+
+    # ── 辅助方法 ──────────────────────────────────────────
+
+    def _get_spec_filename(self, site_name: str) -> str:
+        """根据站点名生成对应的 spec 文件名，如 US → us_carvera.spec.ts"""
+        return f"{site_name.lower()}_carvera.spec.ts"
+
+    def _get_spec_path(self, site_name: str) -> Path:
+        """获取站点对应的 spec 文件完整路径"""
+        return self.project_root / "src" / "web" / "testcases" / "smoke" / self._get_spec_filename(site_name)
+
+    def _get_site_url_map(self) -> str:
+        """构建站点→URL 映射字符串，供 HealAgent 使用"""
+        lines = []
+        for site in self.target_sites:
+            name = site.get("name", "unknown")
+            url = site.get("url", "")
+            filename = self._get_spec_filename(name)
+            lines.append(f"  {name}: url={url}, spec={filename}")
+        return "\n".join(lines)
+
+    # ── 工具构建 ──────────────────────────────────────────
 
     def build_tools(self) -> List[Any]:
         """
-        构建 MonitorAgent 的工具集
+        构建 MonitorAgent 的工具集（多站点感知）
 
-        工具设计原则（高内聚低耦合）：
-        - 每个工具对应一个独立业务能力
-        - 工具内部调用增量0-2已实现的方法，不重复逻辑
-        - 工具返回字符串，便于 Agent 解析和决策
+        工具设计原则：
+        - 每个工具内部遍历所有站点，对 LLM 暴露为原子操作
+        - 减少 LLM 决策负担，将循环逻辑下沉到工具层
         """
         runner = PlaywrightRunner(project_root=self.project_root)
         notifier = FeishuNotifier()
         heal_result = ""  # 记录自愈结果，供飞书通知使用
+        initial_junit_backup: Optional[Path] = None  # 初始测试结果备份（自愈前）
 
         @tool
         def generate_test_specs() -> str:
             """
-            探索目标 URL 并自动生成 Playwright 测试脚本。
+            遍历所有目标站点，对缺失 spec 文件的站点自动生成 Playwright 测试脚本。
 
-            使用 Playwright 打开页面，收集可见的交互元素，
-            生成使用语义定位器（getByRole/getByText）的 .spec.ts 文件。
-            目标 URL 从配置自动读取，无需手动传入。
+            目标站点从配置自动读取，无需手动传入。
+            每个站点对应独立的 spec 文件（如 us_carvera.spec.ts），
+            已存在的文件会自动跳过，不重复生成。
 
-            重要：如果测试脚本已存在，会自动跳过生成（保留现有脚本）。
-            只有当文件不存在时才会生成新脚本。
             不要尝试传入任何参数来强制重新生成。
 
             Returns:
-                生成结果的文本描述，包含生成文件路径和用例数量
+                各站点生成结果的汇总文本
             """
-            url = self.target_url
-            logger.info(f"[工具] generate_test_specs 被调用，URL={url}")
+            logger.info("[工具] generate_test_specs 被调用（多站点模式）")
+            results: List[str] = []
 
-            spec_path = self.project_root / "src" / "web" / "testcases" / "smoke" / "generated_homepage.spec.ts"
-            if spec_path.exists():
-                logger.info(f"[工具] ⏭️ 测试脚本已存在，跳过生成: {spec_path}")
-                print(f"[MonitorAgent] ⏭️ 测试脚本已存在，跳过生成")
-                return f"⏭️ 测试脚本已存在，跳过生成（保留现有脚本）"
+            for site in self.target_sites:
+                site_name = site["name"]
+                url = site["url"]
+                spec_filename = self._get_spec_filename(site_name)
+                spec_path = self._get_spec_path(site_name)
 
-            return_code, stdout, stderr = runner.generate_specs(url)
-            if return_code == 0:
-                return f"✅ 测试脚本生成成功\n{stdout}"
-            else:
-                return f"❌ 测试脚本生成失败\n错误: {stderr}\n输出: {stdout}"
+                if spec_path.exists():
+                    logger.info(f"[工具] ⏭️ {site_name} 脚本已存在，跳过: {spec_filename}")
+                    results.append(f"⏭️ {site_name}：脚本已存在，跳过生成")
+                    continue
+
+                logger.info(f"[工具] 🚀 为 {site_name} 生成脚本: {spec_filename}")
+                try:
+                    return_code, stdout, stderr = runner.generate_specs(url, spec_filename)
+                    if return_code == 0:
+                        results.append(f"✅ {site_name}：生成成功 → {spec_filename}")
+                    else:
+                        results.append(f"❌ {site_name}：生成失败 → {stderr[:200]}")
+                except Exception as e:
+                    logger.error(f"[工具] {site_name} 生成异常: {e}")
+                    results.append(f"❌ {site_name}：生成异常 → {e}")
+
+            return "\n".join(results) if results else "所有站点脚本均已存在，无需生成"
 
         @tool
         def run_playwright_tests() -> str:
             """
-            执行所有 Playwright 测试并生成 JUnit 报告。
+            执行所有站点的 Playwright 测试并生成 JUnit 报告。
 
-            调用 `npx playwright test` 运行 playwright.config.ts 中配置的测试目录下的所有 .spec.ts 文件，
-            报告输出到 workspace/test-results/junit.xml
+            Playwright 自动发现 testDir 下所有 .spec.ts 文件，
+            每个 test() 获得独立浏览器上下文（故障隔离）。
+            串行执行（workers=1），报告输出到 workspace/test-results/junit.xml
 
             Returns:
                 测试执行的返回码和摘要（0=全部通过，非0=存在失败）
             """
-            logger.info("[工具] run_playwright_tests 被调用")
+            logger.info("[工具] run_playwright_tests 被调用（多站点模式）")
             return_code, stdout, stderr = runner.run_tests()
             summary = f"返回码: {return_code}\n"
             if stdout:
                 # 只取最后20行，避免 context 过长
                 summary += "\n".join(stdout.strip().split("\n")[-20:])
             return summary
-
-        @tool
-        def push_feishu_report() -> str:
-            """
-            解析最新的 JUnit 报告并推送飞书卡片到工作群。
-
-            卡片包含：总用例数、通过数、失败数、跳过数。
-
-            Returns:
-                推送结果（成功/失败）
-            """
-            logger.info("[工具] push_feishu_report 被调用")
-            junit_path = runner.get_junit_path()
-            if not junit_path.exists():
-                return "❌ JUnit 报告不存在，无法推送"
-            try:
-                success = notifier.notify_test_result(str(junit_path), heal_info=heal_result)
-                return "✅ 飞书报告推送成功" if success else "❌ 飞书报告推送失败"
-            except Exception as e:
-                return f"❌ 飞书推送异常: {e}"
 
         @tool
         def read_junit_report() -> str:
@@ -121,14 +135,13 @@ class MonitorAgent(BaseAgent):
             用于 Agent 判断测试是否通过、识别失败原因。
 
             Returns:
-                JSON 格式的测试统计和失败详情
+                JSON 格式的测试统计和失败详情（含 classname 可定位到具体站点文件）
             """
             logger.info("[工具] read_junit_report 被调用")
             junit_path = runner.get_junit_path()
             if not junit_path.exists():
                 return json.dumps({"exists": False})
 
-            # 复用 report_parser 统一解析，避免重复逻辑和异常穿透
             summary = get_summary(junit_path)
             failed_cases = parse_junit_failures(junit_path)
 
@@ -140,15 +153,52 @@ class MonitorAgent(BaseAgent):
                 "skipped": summary["skipped"],
                 "failed_cases": failed_cases,
             }
-
             return json.dumps(result, ensure_ascii=False)
+
+        @tool
+        def push_feishu_report() -> str:
+            """
+            推送飞书卡片到工作群。
+
+            自愈成功后使用当前 JUnit（反映修复后结果），自愈失败或数据被破坏时使用备份。
+            卡片包含：总用例数、各站点通过/失败明细、自愈结果。
+
+            Returns:
+                推送结果（成功/失败）
+            """
+            logger.info("[工具] push_feishu_report 被调用")
+            current_junit = runner.get_junit_path()
+            # 自愈成功：当前 JUnit 有有效数据（tests > 0）→ 用新数据
+            # 自愈失败/数据被破坏：当前 JUnit 为空 → 用备份
+            use_backup = False
+            if initial_junit_backup and initial_junit_backup.exists():
+                if current_junit.exists():
+                    try:
+                        summary = get_summary(current_junit)
+                        if summary.get("tests", 0) == 0:
+                            use_backup = True
+                            logger.info("[MonitorAgent] 当前 JUnit 为空，使用备份数据推送")
+                    except Exception:
+                        use_backup = True
+                else:
+                    use_backup = True
+
+            report_path = str(initial_junit_backup) if use_backup else str(current_junit)
+            if not Path(report_path).exists():
+                return "❌ JUnit 报告不存在，无法推送"
+            try:
+                success = notifier.notify_test_result(report_path, heal_info=heal_result)
+                return "✅ 飞书报告推送成功" if success else "❌ 飞书报告推送失败"
+            except Exception as e:
+                return f"❌ 飞书推送异常: {e}"
 
         @tool
         def trigger_healing(failures_json: str) -> str:
             """
             当测试存在失败时，调用 HealAgent 进行自愈修复。
 
-            会创建一个 HealAgent 实例，让它自主执行修复流程。
+            HealAgent 会根据失败用例的 classname 自动定位到对应站点的 spec 文件，
+            并使用站点 URL 映射表匹配正确的目标 URL 进行修复。
             最多重试 3 次，返回最终修复结果。
 
             Args:
@@ -157,6 +207,15 @@ class MonitorAgent(BaseAgent):
             Returns:
                 自愈结果描述，包含成功/失败和修复详情
             """
+            nonlocal initial_junit_backup
+            # 备份初始 JUnit XML（自愈过程会覆盖它）
+            junit_path = runner.get_junit_path()
+            if junit_path.exists():
+                initial_junit_backup = junit_path.with_suffix('.xml.initial')
+                import shutil
+                shutil.copy2(str(junit_path), str(initial_junit_backup))
+                logger.info(f"[MonitorAgent] 已备份初始 JUnit XML → {initial_junit_backup}")
+
             logger.info(f"[工具] trigger_healing 被调用，失败数据: {failures_json[:200]}...")
             print("=" * 60)
             print("[MonitorAgent] 🔥 触发自愈流程！")
@@ -164,13 +223,39 @@ class MonitorAgent(BaseAgent):
             print("=" * 60)
             try:
                 from src.app.agents.heal_agent import HealAgent
+                site_url_map = self._get_site_url_map()
                 heal_agent_instance = HealAgent(self.config)
                 agent = heal_agent_instance.create()
 
+                # 解析失败用例的错误信息，为 Agent 提供修复线索
+                failed_cases = json.loads(failures_json).get("failed_cases", [])
+                error_hints = []
+                for fc in failed_cases:
+                    msg = fc.get("message", "")
+                    name = fc.get("name", "")
+                    if "not visible" in msg or "Element is not visible" in msg:
+                        error_hints.append(
+                            f"【{name}】错误: Element is not visible。"
+                            f"已知原因：元素被幸运转盘弹窗遮挡。"
+                            f"修复方案：在点击目标元素前，先调用 dismissSpinPopup(page) 关闭幸运转盘，并使用 {{ force: true }} 进行点击。"
+                        )
+                    elif "timeout" in msg.lower() or "Timed out" in msg or "exceeded" in msg:
+                        error_hints.append(
+                            f"【{name}】错误: 超时。可能原因：元素加载慢或被遮挡。"
+                            f"修复方案：增加等待时间或使用 {{ force: true }} 点击。"
+                        )
+                    else:
+                        error_hints.append(f"【{name}】错误: {msg[:200]}")
+
+                error_context = "\n".join(error_hints) if error_hints else "无额外错误上下文"
+
                 task = (
                     f"以下测试用例失败，请执行自愈流程：\n"
-                    f"{failures_json}\n"
-                    f"目标 URL: {self.target_url}\n"
+                    f"{failures_json}\n\n"
+                    f"## 错误分析与修复建议\n"
+                    f"{error_context}\n\n"
+                    f"## 站点 URL 映射（用于修复时匹配正确的目标 URL）\n"
+                    f"{site_url_map}\n\n"
                     f"最大重试次数: {HealAgent.MAX_RETRIES}"
                 )
                 result = agent.invoke(
@@ -181,12 +266,24 @@ class MonitorAgent(BaseAgent):
                 content = final_msg.content if hasattr(final_msg, "content") else str(final_msg)
                 nonlocal heal_result
                 heal_result = content  # 记录自愈结果
+
+                # 自愈后恢复初始 JUnit XML 备份，确保飞书通知包含所有站点的完整数据
+                # （自愈过程中 run_tests_and_get_failures 只重跑单站点 spec，会覆盖完整 JUnit）
+                if initial_junit_backup and initial_junit_backup.exists():
+                    import shutil
+                    shutil.copy2(str(initial_junit_backup), str(junit_path))
+                    logger.info(f"[MonitorAgent] 已恢复初始 JUnit XML 备份 → {junit_path}")
+
                 return f"自愈 Agent 返回:\n{content}"
             except Exception as e:
                 logger.error(f"调用 HealAgent 失败: {e}")
+                # 异常时也恢复备份，确保飞书数据完整
+                if initial_junit_backup and initial_junit_backup.exists():
+                    import shutil
+                    shutil.copy2(str(initial_junit_backup), str(junit_path))
+                    logger.info(f"[MonitorAgent] 异常后已恢复初始 JUnit XML 备份")
                 return f"❌ 自愈 Agent 调用异常: {e}"
 
-        # 返回工具列表（顺序无关，Agent 根据 docstring 自主选择）
         return [
             generate_test_specs,
             run_playwright_tests,
@@ -197,47 +294,45 @@ class MonitorAgent(BaseAgent):
 
     def build_system_prompt(self) -> str:
         """
-        构建 MonitorAgent 的 system prompt
+        构建 MonitorAgent 的 system prompt（多站点分离架构）
 
-        关键设计：
-        - 明确 Agent 的角色和目标
-        - 引导 Agent 读取 explore_home 技能获取探索策略
-        - 规定决策流程：探索→生成→执行→判断→推送
-        - 强调工具使用的顺序依赖
+        核心变化：
+        - 工具内部已处理多站点遍历，Agent 无需关心站点数量
+        - generate_test_specs 自动检查所有站点，缺失才生成
+        - HealAgent 根据 classname 定位对应站点 spec 文件进行修复
         """
-        return """你是一个专业的 Web 监控 Agent，负责自动化监控 Makera 三个站点（WWW、Global、EU）的健康状态。
+        site_names = ", ".join(s["name"] for s in self.target_sites)
+        return f"""你是一个专业的 Web 监控 Agent，负责自动化监控 Makera 多个站点（{site_names}）的健康状态。
 
-## 你的目标
-通过自主决策完成以下完整流程：
-1. **探索**：读取 `explore_home` 技能，了解如何探索目标页面
-2. **执行**：调用 `run_playwright_tests` 工具运行测试（测试脚本已包含三个站点的用例）
-3. **判断**：调用 `read_junit_report` 工具分析测试结果
-4. **推送**：调用 `push_feishu_report` 工具将报告推送到飞书
-5. **自愈**：如果测试有失败，调用 `trigger_healing` 触发 HealAgent 自动修复
+## 架构说明
+每个站点对应独立的测试脚本文件（如 us_carvera.spec.ts、eu_carvera.spec.ts），
+各站点故障隔离，一个站点失败不影响其他站点的测试执行和报告。
 
 ## 工作流程（必须严格遵循）
-1. 首先调用 `generate_test_specs()`（无参数）—— 如果脚本已存在会自动跳过
-2. 然后调用 `run_playwright_tests()` 执行测试
-3. 接着调用 `read_junit_report()` 读取结果
-4. **关键**：如果 `read_junit_report` 返回的 `failed_cases` 不为空，必须调用 `trigger_healing()` 触发自愈
-5. 调用 `push_feishu_report()` 推送飞书报告
-6. 向用户简洁汇报执行结果
+1. 调用 `generate_test_specs()` —— 内部遍历所有站点，缺失的自动生成，已有的跳过
+2. 调用 `run_playwright_tests()` —— Playwright 自动发现并串行执行所有 spec 文件
+3. 调用 `read_junit_report()` —— 解析测试结果，获取各站点通过/失败明细
+4. **关键判断**：如果 `read_junit_report` 返回的 `failed_cases` 不为空，必须调用 `trigger_healing(failures_json)` 触发自愈
+   - HealAgent 会根据失败用例的 classname 自动定位对应站点 spec 文件
+   - 使用站点 URL 映射表匹配正确的目标 URL 进行定位器修复
+5. 调用 `push_feishu_report()` —— 推送飞书卡片（含各站点明细和自愈结果）
+6. 向用户简洁汇报各站点执行结果
 
 ## 工具使用规则
-- `generate_test_specs`：必须先于 `run_playwright_tests` 调用，确保有最新的测试脚本
-- `run_playwright_tests`：执行测试，返回码 0 表示全部通过，非 0 表示有失败
-- `read_junit_report`：用于详细分析失败用例，返回 JSON 格式的失败详情
-- `trigger_healing`：当测试存在失败时调用，传入失败列表 JSON，HealAgent 会自动修复并重试
-- `push_feishu_report`：始终在测试执行后调用，确保团队收到通知
+- `generate_test_specs`：必须先于 `run_playwright_tests` 调用
+- `run_playwright_tests`：返回码 0=全部通过，非0=存在失败
+- `read_junit_report`：failed_cases 中包含 classname 字段，可定位到具体站点文件
+- `trigger_healing`：传入 read_junit_report 返回的完整 JSON，HealAgent 自动匹配站点 URL
+- `push_feishu_report`：始终在最后调用，确保团队收到通知
 
 ## 输出要求
 - 用中文汇报
-- 包含：生成脚本数量、测试通过/失败数、自愈结果、飞书推送状态
-- 如果测试失败，明确指出失败用例名称和可能原因
-- 保持简洁，不超过 300 字
+- 包含：各站点生成/跳过状态、测试通过/失败数（按站点）、自愈结果、飞书推送状态
+- 如果某站点失败，明确指出站点名和失败用例
+- 保持简洁，不超过 400 字
 
 ## 注意事项
-- 每次执行都是独立的，不要假设上一次的状态
-- 如果某个工具调用失败，记录错误并尝试继续执行后续步骤
-- 探索策略详细步骤参见 `explore_home` 技能文件
+- 每次执行独立，不假设上次状态
+- 某工具调用失败时记录错误并继续后续步骤（如生成失败仍尝试执行已有脚本）
+- 探索策略详见 `explore_home` 技能文件
 """

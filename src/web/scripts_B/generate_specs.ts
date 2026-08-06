@@ -4,9 +4,10 @@
  *
  * 功能：使用 Playwright 打开目标页面，抓取可见元素，生成包含语义定位器的 .spec.ts 文件
  *
- * 调用方式：npx ts-node src/web/scripts_B/generate_specs.ts <url>
+ * 调用方式：npx ts-node src/web/scripts_B/generate_specs.ts <url> [output_file]
  *
- * 输出：生成 src/web/testcases/smoke/generated_homepage.spec.ts
+ * 输出：默认生成 src/web/testcases/smoke/generated_homepage.spec.ts
+ *       可通过第二个参数指定输出文件名（如 us_carvera.spec.ts）
  *
  * 性能优化：
  * - 单次页面访问，一次性收集所有需要测试的元素
@@ -19,7 +20,7 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 
 const OUTPUT_DIR = path.resolve(__dirname, '../testcases/smoke');
-const OUTPUT_FILE = path.join(OUTPUT_DIR, 'generated_homepage.spec.ts');
+const DEFAULT_OUTPUT_FILE = 'generated_homepage.spec.ts';
 const MAX_TESTS = 5;             // 最多收集5个元素
 const MAX_ELEMENT_TESTS = 4;   // 最多生成4个元素测试（+1标题测试=共5条）
 const TIMEOUT = 100000;         // 页面加载超时100秒
@@ -160,12 +161,16 @@ function killLingeringChromium(): void {
 async function main() {
   const args = process.argv.slice(2);
   if (args.length < 1) {
-    console.error('用法: npx ts-node src/web/scripts/generate_specs.ts <url>');
+    console.error('用法: npx ts-node src/web/scripts/generate_specs.ts <url> [output_file]');
     process.exit(1);
   }
   const url = args[0];
+  // 第二个参数为可选输出文件名（仅文件名，不含路径，如 us_carvera.spec.ts）
+  const outputFileName = args[1] || DEFAULT_OUTPUT_FILE;
+  const outputFile = path.join(OUTPUT_DIR, outputFileName);
 
   console.log(`[generate_specs] 开始生成测试脚本，目标 URL: ${url}`);
+  console.log(`[generate_specs] 输出文件: ${outputFile}`);
 
   // 确保输出目录存在
   if (!fs.existsSync(OUTPUT_DIR)) {
@@ -210,8 +215,8 @@ async function main() {
     const code = generateTestCode(url, elements);
 
     // 写入文件
-    fs.writeFileSync(OUTPUT_FILE, code, 'utf-8');
-    console.log(`[generate_specs] 测试脚本已生成: ${OUTPUT_FILE}`);
+    fs.writeFileSync(outputFile, code, 'utf-8');
+    console.log(`[generate_specs] 测试脚本已生成: ${outputFile}`);
     const actualTestCount = Math.min(elements.length, MAX_ELEMENT_TESTS) + 1; // +1 for title test
     console.log(`[generate_specs] 共生成 ${actualTestCount} 个测试用例（1 个标题测试 + ${Math.min(elements.length, MAX_ELEMENT_TESTS)} 个元素测试）`);
 

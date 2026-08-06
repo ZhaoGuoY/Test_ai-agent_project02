@@ -3,11 +3,15 @@
 # 后续增量会通过 src/core/config_loader.py 读取此文件
 #YAML 数据和 playwright.config.ts 完全一致，语法正确。 唯一要注意的是 ${VAR} 占位符需要代码层面处理
 
-# 目标测试网站
+# 目标测试网站（三站点分离架构：每个站点独立 spec 文件，故障隔离）
 target:
   sites:
     - name: US
       url: "https://www.makera.com/products/carvera"
+    - name: EU
+      url: "https://eu.makera.com/products/carvera-air"
+    - name: Global
+      url: "https://global.makera.com/products/makera-z1-desktop-cnc"
   title_contains: "Makera"   # 用于增量1冒烟测试断言
 
 # Playwright 相关配置

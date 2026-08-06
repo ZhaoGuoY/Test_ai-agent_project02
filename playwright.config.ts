@@ -3,13 +3,18 @@
 // =============================================================================
 // 作用：
 //   定义 Web 自动化测试的全局行为，包括：
-//   1. 测试用例扫描目录（testDir）
-//   2. 超时、重试、并行执行策略
+//   1. 测试用例扫描目录（testDir）—— 自动发现所有 .spec.ts 文件
+//   2. 超时、重试、并行执行策略（串行 workers=1，站点间故障隔离）
 //   3. 多格式报告器输出（终端 list / JUnit XML / HTML 网页报告）
 //      - JUnit XML 供后续 Python 解析并推送飞书通知
 //      - HTML 报告供人工查看测试详情
 //   4. 浏览器运行参数（无头模式、视口、失败截图/录屏/trace）
 //   5. 目标浏览器项目（当前仅 Chromium）
+//
+// 多站点架构说明：
+//   - 每站点独立 spec 文件（us/eu/global_carvera.spec.ts），各自声明 TARGET_URL
+//   - baseURL 不再全局设定，避免跨站点 URL 冲突
+//   - geolocation 设为 US 作为默认（各 spec 可按需覆盖）
 // 参考：https://playwright.dev/docs/test-configuration
 // =============================================================================
 import { defineConfig, devices } from '@playwright/test';
@@ -42,8 +47,7 @@ export default defineConfig({
 
   // 全局测试设置
   use: {
-    // 目标测试网站（来自增量需求）
-    baseURL: 'https://www.makera.com/products/carvera',
+    // 多站点架构：各 spec 文件自行声明 TARGET_URL，不再使用全局 baseURL
 
     // 有头模式运行（本地调试可见浏览器，CI 环境自动无头）
     headless: process.env.CI ? true : false,
@@ -51,11 +55,7 @@ export default defineConfig({
     // 视口大小
     viewport: { width: 1280, height: 720 },
 
-    // 地理位置设为美国，防止 Shopify IP 跳转导致白屏/重定向
-    geolocation: { longitude: -122.4194, latitude: 37.7749 },
-    permissions: ['geolocation'],
-    locale: 'en-US',
-    timezoneId: 'America/Los_Angeles',
+    // 各站点在 spec 文件中通过 test.use() 自行设置 geolocation/locale/timezoneId
 
     // 失败时截图和录像
     screenshot: 'only-on-failure',

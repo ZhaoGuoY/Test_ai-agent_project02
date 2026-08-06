@@ -26,33 +26,54 @@ class PlaywrightRunner:
         if self.npx_path is None:
             logger.warning("未在 PATH 中找到 npx，尝试使用默认命令")
 
-    def run_tests(self, test_dir: Optional[str] = None) -> Tuple[int, str, str]:
-        """执行 Playwright 测试（串行单进程，避免多站点并发冲突）"""
+    def run_tests(self, test_dir: Optional[str] = None, spec_file: Optional[str] = None) -> Tuple[int, str, str]:
+        """执行 Playwright 测试（串行单进程，避免多站点并发冲突）
+        
+        Args:
+            test_dir: 指定测试目录，为空则运行 testDir 下所有测试
+            spec_file: 指定单个 spec 文件路径，只运行该文件中的用例（比 -g 更可靠）
+        """
         npx = self.npx_path or "npx"
         cmd = [npx, "playwright", "test", "--workers=1"]
-        if test_dir:
+        if spec_file:
+            cmd.append(spec_file)
+        elif test_dir:
             cmd.append(test_dir)
 
         logger.info(f"执行命令: {' '.join(cmd)}")
         logger.info(f"工作目录: {self.project_root}")
 
         try:
-            result = subprocess.run(
+            # 实时流式输出，让执行过程日志可见
+            process = subprocess.Popen(
                 cmd,
                 cwd=str(self.project_root),
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 encoding='utf-8',
                 errors='replace',
-                timeout=420,
-                shell=True if sys.platform == 'win32' else False
+                shell=True if sys.platform == 'win32' else False,
             )
-            logger.info(f"命令执行完成，返回码: {result.returncode}")
-            if result.stdout:
-                logger.info(f"STDOUT:\n{result.stdout}")
-            if result.stderr:
-                logger.warning(f"STDERR:\n{result.stderr}")
-            return result.returncode, result.stdout, result.stderr
+
+            stdout_lines = []
+            stderr_lines = []
+
+            # 实时打印 stdout
+            for line in process.stdout:
+                logger.info(f"[playwright] {line.rstrip()}")
+                stdout_lines.append(line)
+
+            # 实时打印 stderr
+            for line in process.stderr:
+                logger.warning(f"[playwright] {line.rstrip()}")
+                stderr_lines.append(line)
+
+            process.wait(timeout=420)
+            stdout_text = ''.join(stdout_lines)
+            stderr_text = ''.join(stderr_lines)
+            logger.info(f"命令执行完成，返回码: {process.returncode}")
+            return process.returncode, stdout_text, stderr_text
 
         except subprocess.TimeoutExpired as e:
             logger.error(f"命令执行超时: {e}")
@@ -70,12 +91,14 @@ class PlaywrightRunner:
             logger.error(f"未找到 npx 命令: {e}")
             return -1, "", str(e)
 
-    def generate_specs(self, url: str) -> Tuple[int, str, str]:
+    def generate_specs(self, url: str, output_filename: str = "") -> Tuple[int, str, str]:
         """
         调用 TypeScript 脚本自动生成测试用例
 
         Args:
             url: 目标页面 URL
+            output_filename: 可选输出文件名（仅文件名，如 us_carvera.spec.ts），
+                           为空则使用默认文件名 generated_homepage.spec.ts
 
         Returns:
             (return_code, stdout, stderr)
@@ -83,6 +106,8 @@ class PlaywrightRunner:
         script_path = self.project_root / "src" / "web" / "scripts_B" / "generate_specs.ts"
         npx = self.npx_path or "npx"
         cmd = [npx, "ts-node", str(script_path), url]
+        if output_filename:
+            cmd.append(output_filename)
 
         logger.info(f"生成测试脚本命令: {' '.join(cmd)}")
         try:

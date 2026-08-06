@@ -15,10 +15,11 @@
  * - 只修复指定的失败用例，不重新生成整个文件
  * - 使用正则替换，避免 AST 解析开销
  */
-import { chromium, Browser, Page } from 'playwright';
+import { chromium, type Browser, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
+import { setupPage } from '../testcases/smoke/helpers';
 
 const DEFAULT_SPEC_PATH = path.resolve(__dirname, '../testcases/smoke/generated_homepage.spec.ts');
 const TIMEOUT = 25000; // 25秒
@@ -30,51 +31,21 @@ interface ElementInfo {
 }
 
 /**
- * 等待页面 URL 稳定（处理 Shopify IP 跳转）
- * 导航后等待 10 秒让 IP 跳转完成，然后每 10 秒检查一次，最多等待 2 分钟
- * @returns true=URL已稳定，false=超时未稳定
- */
-async function waitForStableUrl(page: Page, targetUrl: string): Promise<boolean> {
-  const targetHost = new URL(targetUrl).hostname;
-  const MAX_WAIT_MS = 120_000;  // 2 分钟上限
-  const CHECK_INTERVAL_MS = 10_000;
-  let elapsed = 0;
-
-  await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 180000 });
-  await page.waitForTimeout(10_000);
-  elapsed += 10_000;
-
-  while (elapsed < MAX_WAIT_MS) {
-    const currentHost = new URL(page.url()).hostname;
-    if (currentHost === targetHost) {
-      console.log(`[heal_specs] ✅ URL 已稳定: ${page.url()}（耗时 ${elapsed / 1000}s）`);
-      return true;
-    }
-    console.log(`[heal_specs]  URL 未稳定，当前: ${page.url()}，目标主机: ${targetHost}，已等待 ${elapsed / 1000}s`);
-    if (currentHost !== targetHost) {
-      await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 180000 });
-    }
-    await page.waitForTimeout(CHECK_INTERVAL_MS);
-    elapsed += CHECK_INTERVAL_MS;
-  }
-
-  console.error(`[heal_specs] ❌ 超时（${MAX_WAIT_MS / 1000}s），URL 仍未稳定: ${page.url()}`);
-  return false;
-}
-
-/**
  * 收集页面中所有可见的可交互元素
+ * 复用 helpers.ts 的 setupPage 处理 Shopify IP 跳转和商店切换
  */
 async function collectElements(browser: Browser, url: string): Promise<ElementInfo[]> {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const page = await context.newPage();
 
-  // 等待 IP 跳转稳定后再收集元素
-  const stable = await waitForStableUrl(page, url);
-  if (!stable) {
+  // 使用 setupPage 处理 Shopify IP 跳转（与测试执行相同的导航逻辑）
+  console.log(`[heal_specs] 使用 setupPage 初始化页面: ${url}`);
+  const ready = await setupPage(page, url);
+  if (!ready) {
     await context.close();
-    throw new Error(`URL 未稳定，无法收集元素: ${url}`);
+    throw new Error(`setupPage 初始化失败，无法收集元素: ${url}`);
   }
+  console.log(`[heal_specs] ✅ setupPage 初始化成功: ${page.url()}`);
 
   const elements = await page.evaluate(() => {
     const interactiveTags = ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'H1', 'H2', 'H3', 'P'];
@@ -100,17 +71,100 @@ async function collectElements(browser: Browser, url: string): Promise<ElementIn
 }
 
 /**
- * 根据失败测试名和收集到的元素，生成新的定位器代码行
+ * 从测试代码块中提取原始定位器的搜索文本
+ * 如：page.getByRole('button', { name: /add to bag/i }) → "add to bag"
  */
-function generateNewLocatorLine(testName: string, elements: ElementInfo[]): string | null {
-  // 从测试名中提取期望的文本（测试名格式："元素可见: <text>" 或 "元素可见- <text>"）
-  const match = testName.match(/元素可见[:\-]\s*(.+)/);
-  if (!match) return null;
-  const expectedText = match[1].trim();
+function extractOriginalLocatorText(testBlock: string): string | null {
+  // 匹配 getByRole/getByText/getByLabel 中的 name/text 参数
+  const patterns = [
+    /getByRole\([^)]*name:\s*\/([^\/]+)\/[i]?\)/,   // /regex/i
+    /getByRole\([^)]*name:\s*'([^']+)'/,              // 'string'
+    /getByText\([^)]*'([^']+)'/,                        // 'string'
+    /getByLabel\([^)]*'([^']+)'/,                        // 'string'
+    /getByRole\([^)]*name:\s*\/([^\/]+)\//,            // /regex/ (no flags)
+  ];
+  for (const pattern of patterns) {
+    const match = testBlock.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+}
 
-  // 在元素列表中查找匹配的文本（精确匹配或包含匹配）
-  const matched = elements.find(el => el.text && el.text.includes(expectedText));
-  if (!matched) return null;
+/**
+ * 根据失败测试名、原始定位器文本和收集的元素，生成新的定位器代码行
+ */
+function generateNewLocatorLine(testName: string, testBlock: string, elements: ElementInfo[]): string | null {
+  let expectedText: string;
+
+  // 旧格式："元素可见: <text>" 或 "元素可见- <text>"
+  const oldMatch = testName.match(/元素可见[:\-]\s*(.+)/);
+  if (oldMatch) {
+    expectedText = oldMatch[1].trim();
+  } else {
+    // 新格式：从测试名中提取期望文本（去除常见前后缀）
+    expectedText = testName
+      .replace(/^.*?(?=\p{Script=Han}|[A-Z])/u, '')
+      .replace(/按钮稳定展示.*$/, '')
+      .replace(/稳定展示.*$/, '')
+      .trim();
+    if (!expectedText) expectedText = testName;
+  }
+
+  console.log(`[heal_specs] 测试名提取文本: "${expectedText}"`);
+
+  // 从原始定位器中提取搜索文本作为兜底
+  const originalLocatorText = extractOriginalLocatorText(testBlock);
+  if (originalLocatorText) {
+    console.log(`[heal_specs] 原始定位器文本: "${originalLocatorText}"`);
+  }
+
+  // 搜索候选词：测试名提取 + 原始定位器文本
+  const searchTerms = [expectedText];
+  if (originalLocatorText && !searchTerms.includes(originalLocatorText)) {
+    searchTerms.push(originalLocatorText);
+  }
+
+  // 依次尝试每个搜索词，精确匹配优先
+  let matched = null;
+  for (const term of searchTerms) {
+    matched = elements.find(el => el.text && el.text === term)
+      || elements.find(el => el.text && el.text.toLowerCase() === term.toLowerCase())
+      || elements.find(el => el.text && el.text.includes(term))
+      || elements.find(el => el.text && term.includes(el.text))
+      || null;
+    if (matched) {
+      console.log(`[heal_specs] ✅ 通过搜索词 "${term}" 匹配到元素: "${matched.text}"`);
+      break;
+    }
+  }
+
+  // 模糊匹配兜底：任意搜索词的任意关键词
+  if (!matched) {
+    console.warn(`[heal_specs] 未找到精确匹配，尝试模糊匹配...`);
+    for (const term of searchTerms) {
+      const keywords = term.split(/\s+/).filter(w => w.length >= 2);
+      matched = elements.find(el =>
+        el.text && keywords.some(kw => el.text!.toLowerCase().includes(kw.toLowerCase()))
+      ) || null;
+      if (matched) {
+        console.log(`[heal_specs] ✅ 模糊匹配到元素: "${matched.text}"`);
+        break;
+      }
+    }
+  }
+
+  // 最终兜底：找页面上第一个按钮类元素
+  if (!matched) {
+    console.warn(`[heal_specs] 所有搜索词均未匹配，尝试查找任意按钮元素...`);
+    matched = elements.find(el =>
+      el.tag === 'BUTTON' || (el.role === 'button')
+    ) || null;
+  }
+
+  if (!matched) {
+    console.error(`[heal_specs] 未能找到任何可替换的元素，测试名: "${testName}"`);
+    return null;
+  }
 
   // 生成语义定位器
   if (matched.role && matched.text) {
@@ -186,31 +240,48 @@ async function main() {
   );
   const browser = await Promise.race([launchPromise, launchTimeout]);
   try {
-    const elements = await collectElements(browser, url);
-    console.log(`[heal_specs] 收集到 ${elements.length} 个可见元素`);
-
-    // 3. 生成新的定位器行
-    const newLine = generateNewLocatorLine(failedTestName, elements);
-    if (!newLine) {
-      console.error(`[heal_specs] 未能找到匹配的定位器替代方案，无法修复`);
-      process.exit(1);
-    }
-
-    // 4. 读取原文件内容
+    // 3. 先读取原文件并提取测试块（用于获取原始定位器文本）
     let content = fs.readFileSync(specFilePath, 'utf-8');
-
-    // 5. 查找该测试用例的代码块（基于花括号计数，支持嵌套块）
     const testBlock = findTestBlock(content, failedTestName);
     if (!testBlock) {
       console.error(`[heal_specs] 未找到测试用例 "${failedTestName}" 的代码块`);
       process.exit(1);
     }
 
-    // 替换块内的 expect(...).toBeVisible() 行
-    const newBlock = testBlock.replace(
-      /await expect\(.*?\)\.toBeVisible\(\{ timeout: \d+ \}\);/,
-      newLine
-    );
+    const elements = await collectElements(browser, url);
+    console.log(`[heal_specs] 收集到 ${elements.length} 个可见元素`);
+
+    // 4. 生成新的定位器行（传入测试块以提取原始定位器文本）
+    const newLine = generateNewLocatorLine(failedTestName, testBlock, elements);
+    if (!newLine) {
+      console.error(`[heal_specs] 未能找到匹配的定位器替代方案，无法修复`);
+      process.exit(1);
+    }
+
+    // 5. 查找该测试用例的代码块（已在上文提取）
+
+    // 替换块内的 expect(...).toBeVisible() 行和 scrollIntoViewIfNeeded() 行
+    // 如果存在 scrollIntoViewIfNeeded，替换为新定位器的完整断言行，并移除旧的 toBeVisible 行
+    let newBlock = testBlock;
+    const hasScroll = /await\s+\w+\.scrollIntoViewIfNeeded\(/.test(testBlock);
+    if (hasScroll) {
+      // 将 scrollIntoViewIfNeeded 行（无论有无参数）替换为新定位器的完整断言行
+      newBlock = newBlock.replace(
+        /await\s+\w+\.scrollIntoViewIfNeeded\([^)]*\);?/,
+        newLine
+      );
+      // 移除旧的 toBeVisible 行（新定位行已包含断言）
+      newBlock = newBlock.replace(
+        /\s*await expect\(.*?\)\.toBeVisible\(\{ timeout: \d+ \}\);?/,
+        ''
+      );
+    } else {
+      // 无 scrollIntoViewIfNeeded，直接替换 toBeVisible 行
+      newBlock = testBlock.replace(
+        /await expect\(.*?\)\.toBeVisible\(\{ timeout: \d+ \}\);/,
+        newLine
+      );
+    }
 
     if (newBlock === testBlock) {
       console.warn(`[heal_specs] 未找到可替换的定位器行，可能格式不匹配`);
@@ -239,7 +310,7 @@ function findTestBlock(content: string, testName: string): string | null {
   const escapedName = escapeRegExp(testName);
   // 匹配 test('name', async ({page}) => { 的起始位置
   const startRegex = new RegExp(
-    `test\\(\\s*['"]${escapedName}['"]\\s*,\\s*async\\s*\\(\\s*\\{\\s*page\\s*\\}\\s*\\)\\s*=>\\s*\\{`,
+    `test\\(\\s*['"\\\`${escapedName}'"\\\`]\\s*,\\s*async\\s*\\(\\s*\\{\\s*page\\s*\\}\\s*\\)\\s*=>\\s*\\{`,
     's'
   );
   const startMatch = content.match(startRegex);

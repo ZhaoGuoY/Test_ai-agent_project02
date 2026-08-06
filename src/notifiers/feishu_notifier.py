@@ -61,15 +61,15 @@ class FeishuNotifier:
         tree = ET.parse(junit_path)
         root = tree.getroot()
 
-        # testsuite 节点包含汇总信息
-        testsuite = root.find("testsuite")
-        if testsuite is not None:
-            tests = int(testsuite.get("tests", 0))
-            failures = int(testsuite.get("failures", 0))
-            errors = int(testsuite.get("errors", 0))
-            skipped = int(testsuite.get("skipped", 0))
-        else:
-            tests = failures = errors = skipped = 0
+        # 从子 testsuite 元素聚合统计（根 testsuites 属性可能为空或不准确）
+        # 与 report_parser.py 的 get_summary 保持一致
+        tests = failures = errors = skipped = 0
+        suites = root.findall("testsuite") or root.findall(".//testsuite")
+        for ts in suites:
+            tests += int(ts.get("tests", 0))
+            failures += int(ts.get("failures", 0))
+            errors += int(ts.get("errors", 0))
+            skipped += int(ts.get("skipped", 0))
 
         # 计算通过数 = 总数 - 失败 - 错误 - 跳过
         passed = tests - failures - errors - skipped
@@ -85,9 +85,11 @@ class FeishuNotifier:
             site_stats[site_name]["total"] += 1
             # 检查是否有 failure 或 error 子元素
             has_failure = tc.find("failure") is not None or tc.find("error") is not None
+            is_skipped = tc.find("skipped") is not None
             if has_failure:
                 site_stats[site_name]["failed"] += 1
-            else:
+            elif not is_skipped:
+                # 只有既非失败也非跳过的才算真正通过
                 site_stats[site_name]["passed"] += 1
 
         stats = {
@@ -102,7 +104,7 @@ class FeishuNotifier:
         logger.info(f"测试统计: {stats}")
         return stats
 
-    def send_card(self, stats: Dict[str, Any], title: str = "Web 监控测试报告", heal_info: str = "") -> bool:
+    def send_card(self, stats: Dict[str, Any], title: str = "独立站监控测试报告", heal_info: str = "") -> bool:
         """
         发送飞书卡片消息
 
@@ -121,9 +123,12 @@ class FeishuNotifier:
         failed = stats["failures"] + stats["errors"]
 
         # 根据测试结果决定卡片颜色
-        if failed == 0:
+        if failed == 0 and stats.get("skipped", 0) == 0:
             header_color = "green"
             header_text = f"✅ {title} - 全部通过 - Makera"
+        elif failed == 0:
+            header_color = "yellow"
+            header_text = f"⚠️ {title} - 部分跳过 - Makera"
         else:
             header_color = "red"
             header_text = f"❌ {title} - 存在失败 - Makera"

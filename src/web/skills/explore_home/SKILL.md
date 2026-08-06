@@ -1,23 +1,30 @@
 ---
 name: explore_home
-description: 探索 Makera 商品详情页并生成 Playwright 测试脚本的策略和最佳实践
+description: 探索 Makera 商品详情页并生成 Playwright 测试脚本的策略和最佳实践（三站点分离架构）
 ---
 
 # Explore Home 技能
 
-当需要对 Makera 站点进行自动化测试探索时，遵循以下策略。
+当需要对 Makera 多站点进行自动化测试探索时，遵循以下策略。
 
 ## 何时使用此技能
-- 目标：为 Makera 商品详情页生成稳定、可维护的 Playwright 测试脚本
+- 目标：为 Makera 各站点商品详情页生成稳定、可维护的 Playwright 测试脚本
 - 触发：MonitorAgent 开始执行 Web 监控任务时
 
-## 测试目标（固定，共 1 条）
+## 测试目标（固定，每站点 1 条，共 3 条）
 
-| 站点 | 商品详情页 URL | 验证目标 |
-|------|---------------|----------|
-| US   | https://www.makera.com/products/carvera | Add to cart 按钮 |
+| 站点   | 商品详情页 URL                                           | spec 文件                  |
+|--------|---------------------------------------------------------|---------------------------|
+| US     | https://www.makera.com/products/carvera                  | us_carvera.spec.ts        |
+| EU     | https://eu.makera.com/products/carvera-air              | eu_carvera.spec.ts        |
+| Global | https://global.makera.com/products/makera-z1-desktop-cnc| global_carvera.spec.ts    |
 
-**禁止生成超过 1 条用例。**
+**每站点固定 1 条用例：验证 Add to cart 按钮可见。禁止生成超过上限。**
+
+## 架构说明
+- 每站点独立 spec 文件，共享 `helpers.ts`（dismissPopup / waitForStableUrl / setupPage）
+- 站点间故障隔离，一个站点 IP 跳转失败不影响其他站点
+- Playwright 自动发现目录下所有 .spec.ts 串行执行（workers=1）
 
 ## 前置处理（每次导航后必须执行）
 
