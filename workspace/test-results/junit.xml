@@ -1,8 +1,9 @@
-<testsuites id="" name="" tests="3" failures="0" skipped="0" errors="1" time="242.662801">
-<testsuite name="smoke\eu_carvera.spec.ts" timestamp="2026-08-06T11:38:37.507Z" hostname="chromium" tests="1" failures="0" skipped="0" time="80.22" errors="1">
-<testcase name="EU 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\eu_carvera.spec.ts" time="80.22">
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites id="" name="" tests="3" failures="1" skipped="0" errors="0" time="335.723215">
+<testsuite name="smoke\eu_carvera.spec.ts" timestamp="2026-08-07T06:32:39.602Z" hostname="chromium" tests="1" failures="0" skipped="0" time="69.764" errors="0">
+<testcase name="EU 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\eu_carvera.spec.ts" time="69.764">
 <system-out>
-<![CDATA[[helpers] 🔄 正在导航到: https://eu.makera.com/products/carvera-air
+[helpers] 🔄 正在导航到: https://eu.makera.com/products/carvera-air
 [helpers] ✅ 导航完成，当前 URL: https://www.makera.com/?utm_source=Makera+EU
 [helpers] 📊 跳转检测 1/20（2s / 40s）: 目标=eu.makera.com, 当前=www.makera.com
 [helpers]  开始商店切换流程...
@@ -29,7 +30,7 @@
 [helpers]     🔄 第1次点击商店选项...
 [helpers]   🔄 检查幸运转盘...
 [helpers]   ℹ️ 未发现幸运转盘
-[helpers] ✅ 商店切换成功，URL: https://eu.makera.com/fr?sgcrxid=1744-6865-29068
+[helpers] ✅ 商店切换成功，URL: https://eu.makera.com/fr
 [helpers]   ⏳ 等待 3s 让商店切换完成...
 [helpers]   🔄 重新导航到目标页面: https://eu.makera.com/products/carvera-air
 [helpers]     ⏳ 导航中（超时 60s）...
@@ -45,61 +46,16 @@
 [helpers] 🔎 最终验证: host=eu.makera.com, 目标=eu.makera.com
 [helpers] ✅✅✅ 页面初始化成功: https://eu.makera.com/fr/products/carvera-air
 
-[[ATTACHMENT|..\..\test-results\smoke-eu_carvera-EU-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\test-failed-1.png]]
-
-[[ATTACHMENT|..\..\test-results\smoke-eu_carvera-EU-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\video.webm]]
-
-[[ATTACHMENT|..\..\test-results\smoke-eu_carvera-EU-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\error-context.md]]
-
-[[ATTACHMENT|..\..\test-results\smoke-eu_carvera-EU-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\trace.zip]]
-]]>
 </system-out>
 <system-err>
-<![CDATA[[helpers] ⚠️ 检测到 IP 跳转: www.makera.com → 尝试切换回目标
-]]>
+[helpers] ⚠️ 检测到 IP 跳转: www.makera.com → 尝试切换回目标
+
 </system-err>
-<error message="locator.scrollIntoViewIfNeeded: Timeout 15000ms exceeded." type="TimeoutError">
-<![CDATA[  [chromium] › smoke\eu_carvera.spec.ts:16:7 › EU 站点 › 商品详情页 Add to cart 按钮稳定展示 ────────────────────
-
-    TimeoutError: locator.scrollIntoViewIfNeeded: Timeout 15000ms exceeded.
-    Call log:
-      - waiting for locator('.non-existent-class').first()
-
-
-      22 |     // 验证 Add to cart 按钮可见（.first() 解决多按钮严格模式冲突）
-      23 |     const addToCartBtn = page.locator('.non-existent-class').first();
-    > 24 |     await addToCartBtn.scrollIntoViewIfNeeded({ timeout: 15000 });
-         |                        ^
-      25 |     await expect(addToCartBtn).toBeVisible({ timeout: 15000 });
-      26 |   });
-      27 |
-        at D:\Test_Ai_agent_project\Python_agent_projectZ\Test_ai-agent_project02\src\web\testcases\smoke\eu_carvera.spec.ts:24:24
-
-    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
-    ..\..\..\test-results\smoke-eu_carvera-EU-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\test-failed-1.png
-    ────────────────────────────────────────────────────────────────────────────────────────────────
-
-    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
-    ..\..\..\test-results\smoke-eu_carvera-EU-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\video.webm
-    ────────────────────────────────────────────────────────────────────────────────────────────────
-
-    Error Context: ..\..\..\test-results\smoke-eu_carvera-EU-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\error-context.md
-
-    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
-    ..\..\..\test-results\smoke-eu_carvera-EU-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\trace.zip
-    Usage:
-
-        npx playwright show-trace ..\..\..\test-results\smoke-eu_carvera-EU-站点-商品详情页-Add-to-cart-按钮稳定展示-chromium\trace.zip
-
-    ────────────────────────────────────────────────────────────────────────────────────────────────
-]]>
-</error>
 </testcase>
 </testsuite>
-<testsuite name="smoke\global_carvera.spec.ts" timestamp="2026-08-06T11:38:37.507Z" hostname="chromium" tests="1" failures="0" skipped="0" time="59.464" errors="0">
-<testcase name="Global 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\global_carvera.spec.ts" time="59.464">
-<system-out>
-<![CDATA[[helpers] 🔄 正在导航到: https://global.makera.com/products/makera-z1-desktop-cnc
+<testsuite name="smoke\global_carvera.spec.ts" timestamp="2026-08-07T06:32:39.602Z" hostname="chromium" tests="1" failures="0" skipped="0" time="131.187" errors="0">
+<testcase name="Global 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\global_carvera.spec.ts" time="53.852"><system-out>
+[helpers] 🔄 正在导航到: https://global.makera.com/products/makera-z1-desktop-cnc
 [helpers] ✅ 导航完成，当前 URL: https://global.makera.com/products/makera-z1-desktop-cnc
 [helpers] 📊 跳转检测 1/20（2s / 40s）: 目标=global.makera.com, 当前=global.makera.com
 [helpers] 📊 跳转检测 2/20（4s / 40s）: 目标=global.makera.com, 当前=global.makera.com
@@ -115,14 +71,35 @@
 [helpers] 🔍 匹配"United States (EN)"的元素: []
 [helpers] 🔍 页面按钮: ["English","Login","English","Site navigation","Login","Site navigation","My Cart\n              0 items","Calculate","Check out","Clear"]
 [helpers]     ⚠️ 本轮未找到按钮，等待 2s 重试...
-[helpers]     🔍 第2次查找按钮: "United States (EN)"（3s/30s）
+[helpers]     🔍 第2次查找按钮: "United States (EN)"（2s/30s）
 [helpers]   🔄 检查幸运转盘...
 [helpers]   ℹ️ 未发现幸运转盘
 [helpers]     🔄 尝试 6 种选择器查找按钮...
 [helpers] 🔍 匹配"United States (EN)"的元素: []
 [helpers] 🔍 页面按钮: ["English","Login","English","Site navigation","Login","Site navigation","My Cart\n              0 items","Calculate","Check out","Clear"]
 [helpers]     ⚠️ 本轮未找到按钮，等待 2s 重试...
-[helpers]     🔍 第4次查找按钮: "United States (EN)"（6s/30s）
+[helpers]     🔍 第3次查找按钮: "United States (EN)"（5s/30s）
+[helpers]   🔄 检查幸运转盘...
+[helpers]   ℹ️ 未发现幸运转盘
+[helpers]     🔄 尝试 6 种选择器查找按钮...
+[helpers] 🔍 匹配"United States (EN)"的元素: []
+[helpers] 🔍 页面按钮: ["English","Login","English","Site navigation","Login","Site navigation","My Cart\n              0 items","Calculate","Check out","Clear"]
+[helpers]     ⚠️ 本轮未找到按钮，等待 2s 重试...
+[helpers]     🔍 第4次查找按钮: "United States (EN)"（7s/30s）
+[helpers]   🔄 检查幸运转盘...
+[helpers]   ℹ️ 未发现幸运转盘
+[helpers]     🔄 尝试 6 种选择器查找按钮...
+[helpers] 🔍 匹配"United States (EN)"的元素: []
+[helpers] 🔍 页面按钮: ["English","Login","English","Site navigation","Login","Site navigation","My Cart\n              0 items","Calculate","Check out","Clear"]
+[helpers]     ⚠️ 本轮未找到按钮，等待 2s 重试...
+[helpers]     🔍 第6次查找按钮: "United States (EN)"（10s/30s）
+[helpers]   🔄 检查幸运转盘...
+[helpers]   ℹ️ 未发现幸运转盘
+[helpers]     🔄 尝试 6 种选择器查找按钮...
+[helpers] 🔍 匹配"United States (EN)"的元素: []
+[helpers] 🔍 页面按钮: ["English","Login","English","Site navigation","Login","Site navigation","My Cart\n              0 items","Calculate","Check out","Clear"]
+[helpers]     ⚠️ 本轮未找到按钮，等待 2s 重试...
+[helpers]     🔍 第7次查找按钮: "United States (EN)"（12s/30s）
 [helpers]   🔄 检查幸运转盘...
 [helpers]   ℹ️ 未发现幸运转盘
 [helpers]     🔄 尝试 6 种选择器查找按钮...
@@ -157,18 +134,17 @@
 [helpers]  🧹 弹窗处理完成
 [helpers] 🔎 最终验证: host=global.makera.com, 目标=global.makera.com
 [helpers] ✅✅✅ 页面初始化成功: https://global.makera.com/products/makera-z1-desktop-cnc
-]]>
+
 </system-out>
 <system-err>
-<![CDATA[[helpers] ⚠️ 检测到 IP 跳转: www.makera.com → 尝试切换回目标
-]]>
+[helpers] ⚠️ 检测到 IP 跳转: www.makera.com → 尝试切换回目标
+
 </system-err>
-</testcase>
-</testsuite>
-<testsuite name="smoke\us_carvera.spec.ts" timestamp="2026-08-06T11:38:37.507Z" hostname="chromium" tests="1" failures="0" skipped="0" time="92.054" errors="0">
-<testcase name="US 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\us_carvera.spec.ts" time="92.054">
+</testcase></testsuite>
+<testsuite name="smoke\us_carvera.spec.ts" timestamp="2026-08-07T06:32:39.602Z" hostname="chromium" tests="1" failures="0" skipped="0" time="121.602" errors="0">
+<testcase name="US 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\us_carvera.spec.ts" time="121.602">
 <system-out>
-<![CDATA[[helpers] 🔄 正在导航到: https://www.makera.com/products/carvera
+[helpers] 🔄 正在导航到: https://www.makera.com/products/carvera
 [helpers] ✅ 导航完成，当前 URL: https://www.makera.com/products/carvera
 [helpers] 📊 跳转检测 1/20（2s / 40s）: 目标=www.makera.com, 当前=www.makera.com
 [helpers] 📊 跳转检测 2/20（4s / 40s）: 目标=www.makera.com, 当前=www.makera.com
@@ -199,7 +175,7 @@
 [helpers]  🧹 弹窗处理完成
 [helpers] 🔎 最终验证: host=www.makera.com, 目标=www.makera.com
 [helpers] ✅✅✅ 页面初始化成功: https://www.makera.com/products/carvera
-]]>
+
 </system-out>
 </testcase>
 </testsuite>

@@ -21,8 +21,7 @@ test.describe('Global 站点', () => {
     expect(page.url()).toContain('/products/');
     // 验证 Add to cart 按钮可见（.first() 解决多按钮严格模式冲突）
     const addToCartBtn = page.getByRole('button', { name: /add to cart/i }).first();
-    await addToCartBtn.scrollIntoViewIfNeeded({ timeout: 15000 });
-    await expect(addToCartBtn).toBeVisible({ timeout: 15000 });
+    await expect(addToCartBtn).toBeVisible({ timeout: 5000 });
   });
 
 });

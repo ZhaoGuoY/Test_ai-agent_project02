@@ -8,7 +8,7 @@
  * 3. 解析原测试文件，用新的语义定位器替换失败的定位器
  * 4. 写回修复后的 .spec.ts 文件
  *
- * 调用方式：npx ts-node src/web/scripts_B/heal_specs.ts <url> <failed_test_name> [spec_file_path]
+ * 调用方式：npx ts-node src/web/scripts_B/heal_specs.ts <url> <failed_test_name> [spec_file_path] [error_message] [error_message]
  *
  * 性能优化：
  * - 只打开一次浏览器
@@ -199,12 +199,13 @@ function killLingeringChromium(): void {
 async function main() {
   const args = process.argv.slice(2);
   if (args.length < 2) {
-    console.error('用法: npx ts-node src/web/scripts/heal_specs.ts <url> <failed_test_name> [spec_file_path]');
+    console.error('用法: npx ts-node src/web/scripts_B/heal_specs.ts <url> <failed_test_name> [spec_file_path] [error_message]');
     process.exit(1);
   }
   const url = args[0];
   const fullTestName = args[1];
   const specFilePath = args[2] || DEFAULT_SPEC_PATH;
+  const errorMessage = args[3] || '';  // 第4参数：错误消息，用于判断失败类型
 
   // JUnit 返回的测试名格式为 "套件名 › 实际测试名"，需要提取实际测试名
   const failedTestName = fullTestName.includes('›')
@@ -240,7 +241,7 @@ async function main() {
   );
   const browser = await Promise.race([launchPromise, launchTimeout]);
   try {
-    // 3. 先读取原文件并提取测试块（用于获取原始定位器文本）
+    // 3. 先读取原文件并提取测试块
     let content = fs.readFileSync(specFilePath, 'utf-8');
     const testBlock = findTestBlock(content, failedTestName);
     if (!testBlock) {
@@ -248,51 +249,76 @@ async function main() {
       process.exit(1);
     }
 
-    const elements = await collectElements(browser, url);
-    console.log(`[heal_specs] 收集到 ${elements.length} 个可见元素`);
-
-    // 4. 生成新的定位器行（传入测试块以提取原始定位器文本）
-    const newLine = generateNewLocatorLine(failedTestName, testBlock, elements);
-    if (!newLine) {
-      console.error(`[heal_specs] 未能找到匹配的定位器替代方案，无法修复`);
-      process.exit(1);
-    }
-
-    // 5. 查找该测试用例的代码块（已在上文提取）
-
-    // 替换块内的 expect(...).toBeVisible() 行和 scrollIntoViewIfNeeded() 行
-    // 如果存在 scrollIntoViewIfNeeded，替换为新定位器的完整断言行，并移除旧的 toBeVisible 行
+    // 4. 判断失败类型并执行对应修复策略
+    const isUrlError = errorMessage.includes('toContain') && errorMessage.includes('/products/');
     let newBlock = testBlock;
-    const hasScroll = /await\s+\w+\.scrollIntoViewIfNeeded\(/.test(testBlock);
-    if (hasScroll) {
-      // 将 scrollIntoViewIfNeeded 行（无论有无参数）替换为新定位器的完整断言行
+
+    if (isUrlError) {
+      // ── URL 断言失败修复 ──
+      // 根因：setupPage 完成后页面停在首页，未到达产品页
+      // 修复：在 setupPage 后插入 page.waitForURL 确保导航完成
+      console.log(`[heal_specs] 检测到 URL 断言失败，执行导航修复`);
+
+      const urlMatch = content.match(/const\s+TARGET_URL\s*=\s*'([^']+)'/);
+      if (!urlMatch) {
+        console.error(`[heal_specs] 无法从 spec 文件提取 TARGET_URL`);
+        process.exit(1);
+      }
+      console.log(`[heal_specs] 目标 URL: ${urlMatch[1]}`);
+
+      // 在 setupPage 行后插入 waitForURL，确保页面导航到目标 URL
+      const waitLine = `    await page.waitForURL(/products/, { timeout: 30000 });`;
       newBlock = newBlock.replace(
-        /await\s+\w+\.scrollIntoViewIfNeeded\([^)]*\);?/,
-        newLine
+        /(const ready = await setupPage\(page, TARGET_URL\);)/,
+        `$1\n${waitLine}`
       );
-      // 移除旧的 toBeVisible 行（新定位行已包含断言）
-      newBlock = newBlock.replace(
-        /\s*await expect\(.*?\)\.toBeVisible\(\{ timeout: \d+ \}\);?/,
-        ''
-      );
+
+      if (newBlock === testBlock) {
+        console.error(`[heal_specs] URL 修复失败：未找到 setupPage 行`);
+        process.exit(1);
+      }
+      console.log(`[heal_specs] ✅ 导航修复成功：在 setupPage 后添加 waitForURL`);
+
     } else {
-      // 无 scrollIntoViewIfNeeded，直接替换 toBeVisible 行
-      newBlock = testBlock.replace(
-        /await expect\(.*?\)\.toBeVisible\(\{ timeout: \d+ \}\);/,
-        newLine
-      );
+      // ── 定位器失败修复（原有逻辑）──
+      const elements = await collectElements(browser, url);
+      console.log(`[heal_specs] 收集到 ${elements.length} 个可见元素`);
+
+      const newLine = generateNewLocatorLine(failedTestName, testBlock, elements);
+      if (!newLine) {
+        console.error(`[heal_specs] 未能找到匹配的定位器替代方案，无法修复`);
+        process.exit(1);
+      }
+
+      const hasScroll = /await\s+\w+\.scrollIntoViewIfNeeded\(/.test(testBlock);
+      if (hasScroll) {
+        newBlock = newBlock.replace(
+          /await\s+\w+\.scrollIntoViewIfNeeded\([^)]*\);?/,
+          newLine
+        );
+        newBlock = newBlock.replace(
+          /\s*await expect\(.*?\)\.toBeVisible\(\{ timeout: \d+ \}\);?/,
+          ''
+        );
+      } else {
+        newBlock = testBlock.replace(
+          /await expect\(.*?\)\.toBeVisible\(\{ timeout: \d+ \}\);/,
+          newLine
+        );
+      }
+
+      if (newBlock === testBlock) {
+        console.warn(`[heal_specs] 未找到可替换的定位器行，可能格式不匹配`);
+        process.exit(1);
+      }
+      console.log(`[heal_specs] ✅ 定位器修复成功`);
+      console.log(`[heal_specs] 新定位器: ${newLine}`);
     }
 
-    if (newBlock === testBlock) {
-      console.warn(`[heal_specs] 未找到可替换的定位器行，可能格式不匹配`);
-      process.exit(1);
-    }
-
-    // 6. 写回文件
+    // 5. 写回文件
     content = content.replace(testBlock, newBlock);
     fs.writeFileSync(specFilePath, content, 'utf-8');
-    console.log(`[heal_specs] ✅ 修复成功，已将定位器替换为新行`);
-    console.log(`[heal_specs] 新定位器: ${newLine}`);
+    console.log(`[heal_specs] ✅ 修复完成，已写回文件`);
 
   } catch (err) {
     console.error(`[heal_specs] 修复异常:`, err);
@@ -305,22 +331,41 @@ async function main() {
 /**
  * 通过测试名定位 test 块，基于花括号计数提取完整代码块
  * 支持嵌套 {}（如 if/try/catch），确保提取完整的测试体
+ *
+ * 使用字符串查找（indexOf）而非正则，避免模板字符串中反引号转义问题
  */
 function findTestBlock(content: string, testName: string): string | null {
-  const escapedName = escapeRegExp(testName);
-  // 匹配 test('name', async ({page}) => { 的起始位置
-  const startRegex = new RegExp(
-    `test\\(\\s*['"\\\`${escapedName}'"\\\`]\\s*,\\s*async\\s*\\(\\s*\\{\\s*page\\s*\\}\\s*\\)\\s*=>\\s*\\{`,
-    's'
-  );
-  const startMatch = content.match(startRegex);
-  if (!startMatch || startMatch.index === undefined) return null;
+  // 1. 在文件内容中查找测试名
+  const nameIndex = content.indexOf(testName);
+  if (nameIndex === -1) {
+    console.warn(`[heal_specs] findTestBlock: 文件中未找到测试名 "${testName}"`);
+    return null;
+  }
+  console.log(`[heal_specs] findTestBlock: 在位置 ${nameIndex} 找到测试名 "${testName}"`);
 
-  const startIndex = startMatch.index;
-  // 找到箭头函数体开始的 '{' 位置
-  const braceStart = startIndex + startMatch[0].length - 1;
+  // 2. 从测试名位置向前查找 test( 关键字
+  const searchStart = Math.max(0, nameIndex - 200);  // test( 不会离测试名超过 200 字符
+  const prefix = content.substring(searchStart, nameIndex);
+  const testCallIdx = prefix.lastIndexOf('test(');
+  if (testCallIdx === -1) {
+    console.warn(`[heal_specs] findTestBlock: 未找到 test( 关键字`);
+    return null;
+  }
+  const absoluteTestCall = searchStart + testCallIdx;
 
-  // 花括号计数，提取完整块
+  // 3. 从 test( 开始找到箭头函数体的 { 位置
+  const arrowIdx = content.indexOf('=>', absoluteTestCall);
+  if (arrowIdx === -1) {
+    console.warn(`[heal_specs] findTestBlock: 未找到 => 箭头`);
+    return null;
+  }
+  const braceStart = content.indexOf('{', arrowIdx);
+  if (braceStart === -1) {
+    console.warn(`[heal_specs] findTestBlock: 未找到函数体 {`);
+    return null;
+  }
+
+  // 4. 花括号计数，提取完整块
   let depth = 0;
   let i = braceStart;
   for (; i < content.length; i++) {
@@ -330,12 +375,11 @@ function findTestBlock(content: string, testName: string): string | null {
       if (depth === 0) break;
     }
   }
-  if (depth !== 0) return null; // 花括号不闭合，格式异常
-  return content.substring(startIndex, i + 1);
-}
-
-function escapeRegExp(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (depth !== 0) {
+    console.warn(`[heal_specs] findTestBlock: 花括号不闭合，格式异常`);
+    return null;
+  }
+  return content.substring(absoluteTestCall, i + 1);
 }
 
 main();

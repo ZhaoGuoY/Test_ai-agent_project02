@@ -55,10 +55,14 @@ def main():
     task = (
         f"请对以下站点执行完整的监控流程：\n"
         f"站点列表：{', '.join(s['name'] + '(' + s['url'] + ')' for s in sites)}\n"
-        f"1. 读取 explore_home 技能了解探索策略\n"
-        f"2. 执行测试脚本（已包含站点的用例）\n"
-        f"3. 分析结果\n"
-        f"4. 推送飞书报告（需包含各站点结果）"
+        f"执行步骤（必须严格按顺序执行，不可跳过任何步骤）：\n"
+        f"1. 调用 generate_test_specs() 检查并生成缺失的测试脚本\n"
+        f"2. 调用 run_playwright_tests() 执行所有站点的测试\n"
+        f"3. 调用 read_junit_report() 解析测试结果\n"
+        f"4. 【关键步骤】如果 read_junit_report 返回的 failed_cases 不为空，"
+        f"必须立即调用 trigger_healing(failures_json) 触发自愈流程，"
+        f"将完整的 JSON 数据传入，不可跳过此步骤！\n"
+        f"5. 调用 push_feishu_report() 推送飞书报告（需包含各站点结果和自愈结果）"
     )
 
     logger.info("Agent 开始执行任务...")

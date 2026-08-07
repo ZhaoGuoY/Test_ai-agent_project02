@@ -165,7 +165,8 @@ class HealAgent(BaseAgent):
                 str(script_path),
                 url,
                 failed_test_name,
-                str(target_spec)
+                str(target_spec),
+                error_message  # 传给 heal_specs.ts 用于判断失败类型（URL断言/定位器失效）
             ]
             logger.info(f"[工具] 执行自愈命令: {' '.join(cmd)}")
 
@@ -360,6 +361,7 @@ class HealAgent(BaseAgent):
 
 ## 注意事项
 - **只修复失败用例，已通过的用例不要触碰**
+- **只修复现有失败用例的定位器，禁止探索新测试点、禁止新增 test() 用例、禁止扩大测试范围**
 - **优先使用任务 prompt 中的错误分析指导修复，不要盲目尝试**
 - 修复后调用 `run_tests_and_get_failures(spec_file="eu_carvera.spec.ts")` **只重跑该站点用例**，不要跑全部测试
 - **heal_single_case 返回失败/超时时，绝对不允许直接调用 run_tests_and_get_failures**

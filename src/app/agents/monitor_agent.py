@@ -11,8 +11,9 @@ MonitorAgent：Web 监控主 Agent（增量3 + 多站点分离架构）
 下游：通过工具调用 PlaywrightRunner 和 FeishuNotifier
 """
 import json
+import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from langchain_core.tools import tool
 
@@ -32,6 +33,57 @@ class MonitorAgent(BaseAgent):
     agent_description = "自主执行 Web 监控：按站点遍历 → 生成脚本 → 执行测试 → 自愈 → 推送报告"
 
     # ── 辅助方法 ──────────────────────────────────────────
+
+    def _merge_junit(self, backup_path: Path, healed_path: Path, output_path: Path) -> None:
+        """
+        合并 JUnit XML：将自愈重跑的结果合并回初始备份
+
+        自愈过程中只重跑了失败站点的 spec，healed_path 仅含该站点结果；
+        backup_path 含全部站点的初始结果（含失败）。
+        合并策略：以 backup 为基础，用 healed 中匹配的 testcase 替换旧结果，
+        使最终 JUnit 反映自愈后的真实状态。
+
+        匹配规则：classname + name 相同视为同一用例。
+        """
+        backup_tree = ET.parse(str(backup_path))
+        backup_root = backup_tree.getroot()
+
+        healed_tree = ET.parse(str(healed_path))
+        healed_root = healed_tree.getroot()
+
+        # 构建 healed 用例索引：(classname, name) → testcase 元素
+        healed_index: Dict[tuple, ET.Element] = {}
+        for tc in healed_root.iter("testcase"):
+            key = (tc.get("classname", ""), tc.get("name", ""))
+            healed_index[key] = tc
+
+        # 遍历 backup 的所有 testsuite，替换匹配的用例
+        replaced_count = 0
+        for ts in backup_root.findall("testsuite") or backup_root.findall(".//testsuite"):
+            for tc in ts.findall("testcase"):
+                key = (tc.get("classname", ""), tc.get("name", ""))
+                if key in healed_index:
+                    healed_tc = healed_index[key]
+                    tc.clear()
+                    tc.attrib = healed_tc.attrib
+                    for child in healed_tc:
+                        tc.append(child)
+                    replaced_count += 1
+
+        # 重新计算每个 testsuite 的统计属性（tests/failures/errors/skipped）
+        # 因为 testcase 子元素已被替换，但 testsuite 属性仍是旧值
+        for ts in backup_root.findall("testsuite") or backup_root.findall(".//testsuite"):
+            ts_tests = len(ts.findall("testcase"))
+            ts_failures = sum(1 for tc in ts.findall("testcase") if tc.find("failure") is not None)
+            ts_errors = sum(1 for tc in ts.findall("testcase") if tc.find("error") is not None)
+            ts_skipped = sum(1 for tc in ts.findall("testcase") if tc.find("skipped") is not None)
+            ts.set("tests", str(ts_tests))
+            ts.set("failures", str(ts_failures))
+            ts.set("errors", str(ts_errors))
+            ts.set("skipped", str(ts_skipped))
+
+        backup_tree.write(str(output_path), encoding="utf-8", xml_declaration=True)
+        logger.info(f"[MonitorAgent] JUnit 合并完成：替换 {replaced_count} 个用例结果 → {output_path}")
 
     def _get_spec_filename(self, site_name: str) -> str:
         """根据站点名生成对应的 spec 文件名，如 US → us_carvera.spec.ts"""
@@ -233,25 +285,44 @@ class MonitorAgent(BaseAgent):
                 for fc in failed_cases:
                     msg = fc.get("message", "")
                     name = fc.get("name", "")
-                    if "not visible" in msg or "Element is not visible" in msg:
+                    classname = fc.get("classname", "")
+                    # 从 classname 推断 spec 文件名，明确告诉 HealAgent 该改哪个文件
+                    spec_file = ""
+                    if "us_" in classname.lower():
+                        spec_file = "us_carvera.spec.ts"
+                    elif "eu_" in classname.lower():
+                        spec_file = "eu_carvera.spec.ts"
+                    elif "global_" in classname.lower():
+                        spec_file = "global_carvera.spec.ts"
+                    file_hint = f"（对应文件: {spec_file}）" if spec_file else ""
+
+                    if "toContain" in msg and "/products/" in msg:
                         error_hints.append(
-                            f"【{name}】错误: Element is not visible。"
+                            f"【{name}】{file_hint} 错误: URL 断言失败，页面未导航到产品页。"
+                            f"已知原因：商店切换后重定向到首页，导航超时。"
+                            f"修复方案：heal_specs.ts 会在 setupPage 后添加 page.waitForURL 确保导航完成。"
+                        )
+                    elif "not visible" in msg or "Element is not visible" in msg:
+                        error_hints.append(
+                            f"【{name}】{file_hint} 错误: Element is not visible。"
                             f"已知原因：元素被幸运转盘弹窗遮挡。"
                             f"修复方案：在点击目标元素前，先调用 dismissSpinPopup(page) 关闭幸运转盘，并使用 {{ force: true }} 进行点击。"
                         )
                     elif "timeout" in msg.lower() or "Timed out" in msg or "exceeded" in msg:
                         error_hints.append(
-                            f"【{name}】错误: 超时。可能原因：元素加载慢或被遮挡。"
+                            f"【{name}】{file_hint} 错误: 超时。可能原因：元素加载慢或被遮挡。"
                             f"修复方案：增加等待时间或使用 {{ force: true }} 点击。"
                         )
                     else:
-                        error_hints.append(f"【{name}】错误: {msg[:200]}")
+                        error_hints.append(f"【{name}】{file_hint} 错误: {msg[:200]}")
 
                 error_context = "\n".join(error_hints) if error_hints else "无额外错误上下文"
 
                 task = (
                     f"以下测试用例失败，请执行自愈流程：\n"
                     f"{failures_json}\n\n"
+                    f"## 核心约束\n"
+                    f"只修复上述失败用例的定位器，禁止探索新测试点、禁止新增 test() 用例、禁止扩大测试范围。\n\n"
                     f"## 错误分析与修复建议\n"
                     f"{error_context}\n\n"
                     f"## 站点 URL 映射（用于修复时匹配正确的目标 URL）\n"
@@ -267,12 +338,12 @@ class MonitorAgent(BaseAgent):
                 nonlocal heal_result
                 heal_result = content  # 记录自愈结果
 
-                # 自愈后恢复初始 JUnit XML 备份，确保飞书通知包含所有站点的完整数据
-                # （自愈过程中 run_tests_and_get_failures 只重跑单站点 spec，会覆盖完整 JUnit）
-                if initial_junit_backup and initial_junit_backup.exists():
-                    import shutil
-                    shutil.copy2(str(initial_junit_backup), str(junit_path))
-                    logger.info(f"[MonitorAgent] 已恢复初始 JUnit XML 备份 → {junit_path}")
+                # 自愈完成后合并 JUnit：把自愈重跑的结果合并回初始备份
+                # （自愈只重跑了失败站点 spec，healed 数据不完整；
+                #  合并后 JUnit 包含全部站点且反映自愈后的最终状态）
+                if initial_junit_backup and initial_junit_backup.exists() and junit_path.exists():
+                    self._merge_junit(initial_junit_backup, junit_path, junit_path)
+                    logger.info(f"[MonitorAgent] 已合并自愈结果到 JUnit → {junit_path}")
 
                 return f"自愈 Agent 返回:\n{content}"
             except Exception as e:
@@ -308,13 +379,14 @@ class MonitorAgent(BaseAgent):
 每个站点对应独立的测试脚本文件（如 us_carvera.spec.ts、eu_carvera.spec.ts），
 各站点故障隔离，一个站点失败不影响其他站点的测试执行和报告。
 
-## 工作流程（必须严格遵循）
+## 工作流程（必须严格按顺序执行，绝对不可跳过任何步骤）
 1. 调用 `generate_test_specs()` —— 内部遍历所有站点，缺失的自动生成，已有的跳过
 2. 调用 `run_playwright_tests()` —— Playwright 自动发现并串行执行所有 spec 文件
 3. 调用 `read_junit_report()` —— 解析测试结果，获取各站点通过/失败明细
-4. **关键判断**：如果 `read_junit_report` 返回的 `failed_cases` 不为空，必须调用 `trigger_healing(failures_json)` 触发自愈
-   - HealAgent 会根据失败用例的 classname 自动定位对应站点 spec 文件
-   - 使用站点 URL 映射表匹配正确的目标 URL 进行定位器修复
+4. **【最关键步骤 - 绝对不可跳过】** 检查 `read_junit_report` 的返回值：
+   - 如果 `failed_cases` 数组不为空（有任何失败用例），**必须立即调用** `trigger_healing(failures_json)` 触发自愈
+   - 将 `read_junit_report` 返回的完整 JSON 字符串直接传入 `trigger_healing` 的 `failures_json` 参数
+   - **绝对不允许在存在失败用例时跳过自愈直接推送报告**
 5. 调用 `push_feishu_report()` —— 推送飞书卡片（含各站点明细和自愈结果）
 6. 向用户简洁汇报各站点执行结果
 
@@ -322,7 +394,7 @@ class MonitorAgent(BaseAgent):
 - `generate_test_specs`：必须先于 `run_playwright_tests` 调用
 - `run_playwright_tests`：返回码 0=全部通过，非0=存在失败
 - `read_junit_report`：failed_cases 中包含 classname 字段，可定位到具体站点文件
-- `trigger_healing`：传入 read_junit_report 返回的完整 JSON，HealAgent 自动匹配站点 URL
+- `trigger_healing`：**存在失败用例时必须调用**，传入 read_junit_report 返回的完整 JSON，HealAgent 自动匹配站点 URL 并修复定位器
 - `push_feishu_report`：始终在最后调用，确保团队收到通知
 
 ## 输出要求
@@ -334,5 +406,6 @@ class MonitorAgent(BaseAgent):
 ## 注意事项
 - 每次执行独立，不假设上次状态
 - 某工具调用失败时记录错误并继续后续步骤（如生成失败仍尝试执行已有脚本）
+- **绝对禁止在有失败用例时跳过 trigger_healing 直接推送报告**
 - 探索策略详见 `explore_home` 技能文件
 """
