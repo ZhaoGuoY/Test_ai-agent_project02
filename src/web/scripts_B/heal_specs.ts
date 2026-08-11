@@ -59,6 +59,10 @@ async function collectElements(browser: Browser, url: string): Promise<ElementIn
       if (style.display === 'none' || style.visibility === 'hidden') continue;
       let text = (el as HTMLElement).innerText?.trim() || null;
       if (!text) text = el.getAttribute('aria-label') || null;
+      // 净化文本：innerText 可能含换行/多空格（如 "My Cart\n0"），若不处理会被
+      // 原样写入生成的 getByText('...') 字符串字面量导致 spec 语法错误，
+      // 因此统一折叠空白为单个空格
+      if (text) text = text.replace(/\s+/g, ' ').trim();
       if (text && text.length > 100) text = text.substring(0, 97) + '...';
       const role = el.getAttribute('role') || null;
       results.push({ tag: el.tagName, role, text });
@@ -177,7 +181,9 @@ function generateNewLocatorLine(testName: string, testBlock: string, elements: E
 }
 
 function escapeStr(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  // 除反斜杠/单引号外，同时转义换行等控制字符，双保险防止生成非法字符串字面量
+  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
 }
 
 /**
@@ -206,6 +212,18 @@ async function main() {
   const fullTestName = args[1];
   const specFilePath = args[2] || DEFAULT_SPEC_PATH;
   const errorMessage = args[3] || '';  // 第4参数：错误消息，用于判断失败类型
+
+  // 环境/网络类失败（页面初始化失败等）：非代码缺陷，无需修改代码。
+  // 直接返回成功（exit 0），让 HealAgent 按正常流程重跑该 spec 验证
+  //（此类失败通常是瞬时 IP 跳转/网络抖动，重跑才是正确应对，改定位器无意义）
+  const isEnvError = errorMessage.includes('页面初始化失败') ||
+    errorMessage.includes('setupPage 初始化失败') ||
+    /page\.goto[\s\S]*[Tt]imeout/.test(errorMessage);
+  if (isEnvError) {
+    console.log(`[heal_specs] ⚠️ 检测到环境类失败（非代码缺陷），无需修改代码: ${errorMessage.substring(0, 120)}`);
+    console.log(`[heal_specs] ✅ 无需修改代码，请直接重跑对应 spec 验证`);
+    process.exit(0);
+  }
 
   // JUnit 返回的测试名格式为 "套件名 › 实际测试名"，需要提取实际测试名
   const failedTestName = fullTestName.includes('›')
@@ -251,6 +269,14 @@ async function main() {
 
     // 4. 判断失败类型并执行对应修复策略
     const isUrlError = errorMessage.includes('toContain') && errorMessage.includes('/products/');
+    // 交互阻塞/前置状态类失败（按钮可见但点不动、抽屉未弹出等）：根因是浮窗遮挡或页面状态，
+    // 不是定位器失效。若继续走定位器替换逻辑，会把块内首个 expect(...).toBeVisible 断言
+    //（往往是前置检查）污染为页面随机文本，导致后续重跑永远失败。此类失败直接跳过改写
+    const isInteractionBlocked = /点击均失败|点击失败|被遮挡|前置条件/.test(errorMessage);
+    if (isInteractionBlocked) {
+      console.error(`[heal_specs] 失败类型为交互阻塞/前置状态问题（非定位器失效），不改写 spec，避免污染断言`);
+      process.exit(1);
+    }
     let newBlock = testBlock;
 
     if (isUrlError) {
@@ -335,23 +361,31 @@ async function main() {
  * 使用字符串查找（indexOf）而非正则，避免模板字符串中反引号转义问题
  */
 function findTestBlock(content: string, testName: string): string | null {
-  // 1. 在文件内容中查找测试名
-  const nameIndex = content.indexOf(testName);
-  if (nameIndex === -1) {
-    console.warn(`[heal_specs] findTestBlock: 文件中未找到测试名 "${testName}"`);
-    return null;
-  }
-  console.log(`[heal_specs] findTestBlock: 在位置 ${nameIndex} 找到测试名 "${testName}"`);
+  // 1. 在文件内容中查找测试名。
+  //    测试名可能先出现在文件头部注释中（如 EU/US spec 顶部 sharedPage 说明注释），
+  //    因此需遍历所有出现位置，跳过前面没有 test( 关键字的注释匹配，
+  //    直到找到真实的 test('用例名') 声明
+  let fromIndex = 0;
+  let absoluteTestCall = -1;
+  while (true) {
+    const nameIndex = content.indexOf(testName, fromIndex);
+    if (nameIndex === -1) {
+      console.warn(`[heal_specs] findTestBlock: 文件中未找到测试名 "${testName}" 的有效 test( 调用`);
+      return null;
+    }
+    console.log(`[heal_specs] findTestBlock: 在位置 ${nameIndex} 找到测试名 "${testName}"`);
 
-  // 2. 从测试名位置向前查找 test( 关键字
-  const searchStart = Math.max(0, nameIndex - 200);  // test( 不会离测试名超过 200 字符
-  const prefix = content.substring(searchStart, nameIndex);
-  const testCallIdx = prefix.lastIndexOf('test(');
-  if (testCallIdx === -1) {
-    console.warn(`[heal_specs] findTestBlock: 未找到 test( 关键字`);
-    return null;
+    // 2. 从测试名位置向前查找 test( 关键字
+    const searchStart = Math.max(0, nameIndex - 200);  // test( 不会离测试名超过 200 字符
+    const prefix = content.substring(searchStart, nameIndex);
+    const testCallIdx = prefix.lastIndexOf('test(');
+    if (testCallIdx !== -1) {
+      absoluteTestCall = searchStart + testCallIdx;
+      break;
+    }
+    console.warn(`[heal_specs] findTestBlock: 该处匹配前无 test( 关键字（可能在注释中），继续查找下一处`);
+    fromIndex = nameIndex + testName.length;
   }
-  const absoluteTestCall = searchStart + testCallIdx;
 
   // 3. 从 test( 开始找到箭头函数体的 { 位置
   const arrowIdx = content.indexOf('=>', absoluteTestCall);

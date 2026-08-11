@@ -117,3 +117,74 @@ def get_summary(junit_path: str | Path) -> Dict[str, int]:
         "skipped": skipped,
         "pass": passed,
     }
+
+
+def merge_junit_files(base_path: str | Path, overlay_path: str | Path, output_path: str | Path) -> int:
+    """
+    合并两份 JUnit XML：以 base 为基础，用 overlay 中同名用例的结果覆盖旧结果
+
+    背景：自愈过程按站点逐个重跑 spec，每次重跑都会整体覆盖 junit.xml，
+    导致先前站点重跑通过的结果丢失（飞书统计因此误报失败）。
+    本函数将每次重跑结果增量合并进累积报告，使最终 JUnit 反映全部站点的最新状态。
+
+    匹配规则：classname + name 相同视为同一用例。
+    合并后重新计算每个 testsuite 的 tests/failures/errors/skipped 属性。
+    任一文件不存在或解析失败时不写入，返回 0（不抛异常，避免阻断主流程）。
+
+    Args:
+        base_path: 基础报告（含全部站点的旧结果）
+        overlay_path: 新报告（仅含本次重跑站点的结果）
+        output_path: 合并结果输出路径（可与 base_path 相同，原地更新）
+
+    Returns:
+        被替换的用例数
+    """
+    base_path = Path(base_path)
+    overlay_path = Path(overlay_path)
+    output_path = Path(output_path)
+    if not base_path.exists() or not overlay_path.exists():
+        logger.warning(f"[merge_junit] 跳过合并：文件不存在 (base={base_path.exists()}, overlay={overlay_path.exists()})")
+        return 0
+    try:
+        backup_tree = ET.parse(str(base_path))
+        backup_root = backup_tree.getroot()
+        healed_root = ET.parse(str(overlay_path)).getroot()
+    except ET.ParseError as e:
+        logger.warning(f"[merge_junit] 跳过合并：XML 解析失败: {e}")
+        return 0
+
+    # 构建 overlay 用例索引：(classname, name) → testcase 元素
+    healed_index: Dict[tuple, ET.Element] = {}
+    for tc in healed_root.iter("testcase"):
+        healed_index[(tc.get("classname", ""), tc.get("name", ""))] = tc
+    if not healed_index:
+        logger.warning("[merge_junit] 跳过合并：overlay 中无任何 testcase（可能是 spec 编译失败导致的空报告）")
+        return 0
+
+    # 遍历 base 的所有 testsuite，替换匹配的用例
+    replaced_count = 0
+    for ts in backup_root.findall("testsuite") or backup_root.findall(".//testsuite"):
+        for tc in ts.findall("testcase"):
+            key = (tc.get("classname", ""), tc.get("name", ""))
+            if key in healed_index:
+                healed_tc = healed_index[key]
+                tc.clear()
+                tc.attrib = healed_tc.attrib
+                for child in healed_tc:
+                    tc.append(child)
+                replaced_count += 1
+
+    # 重新计算每个 testsuite 的统计属性（testcase 已被替换，但 suite 属性仍是旧值）
+    for ts in backup_root.findall("testsuite") or backup_root.findall(".//testsuite"):
+        ts_tests = len(ts.findall("testcase"))
+        ts_failures = sum(1 for tc in ts.findall("testcase") if tc.find("failure") is not None)
+        ts_errors = sum(1 for tc in ts.findall("testcase") if tc.find("error") is not None)
+        ts_skipped = sum(1 for tc in ts.findall("testcase") if tc.find("skipped") is not None)
+        ts.set("tests", str(ts_tests))
+        ts.set("failures", str(ts_failures))
+        ts.set("errors", str(ts_errors))
+        ts.set("skipped", str(ts_skipped))
+
+    backup_tree.write(str(output_path), encoding="utf-8", xml_declaration=True)
+    logger.info(f"[merge_junit] 合并完成：替换 {replaced_count} 个用例结果 → {output_path}")
+    return replaced_count

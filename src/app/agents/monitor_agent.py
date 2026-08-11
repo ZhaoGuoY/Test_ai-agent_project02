@@ -11,7 +11,6 @@ MonitorAgent：Web 监控主 Agent（增量3 + 多站点分离架构）
 下游：通过工具调用 PlaywrightRunner 和 FeishuNotifier
 """
 import json
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -20,7 +19,7 @@ from langchain_core.tools import tool
 from src.app.agents.base_agent import BaseAgent
 from src.core.logger import get_logger
 from src.web.runners.playwright_runner import PlaywrightRunner
-from src.web.runners.report_parser import parse_junit_failures, get_summary
+from src.web.runners.report_parser import parse_junit_failures, get_summary, merge_junit_files
 from src.notifiers.feishu_notifier import FeishuNotifier
 
 logger = get_logger(__name__)
@@ -43,47 +42,10 @@ class MonitorAgent(BaseAgent):
         合并策略：以 backup 为基础，用 healed 中匹配的 testcase 替换旧结果，
         使最终 JUnit 反映自愈后的真实状态。
 
-        匹配规则：classname + name 相同视为同一用例。
+        实际逻辑已下沉到 report_parser.merge_junit_files（heal_agent 重跑时的
+        增量合并也复用同一实现，避免两处逻辑不一致）。
         """
-        backup_tree = ET.parse(str(backup_path))
-        backup_root = backup_tree.getroot()
-
-        healed_tree = ET.parse(str(healed_path))
-        healed_root = healed_tree.getroot()
-
-        # 构建 healed 用例索引：(classname, name) → testcase 元素
-        healed_index: Dict[tuple, ET.Element] = {}
-        for tc in healed_root.iter("testcase"):
-            key = (tc.get("classname", ""), tc.get("name", ""))
-            healed_index[key] = tc
-
-        # 遍历 backup 的所有 testsuite，替换匹配的用例
-        replaced_count = 0
-        for ts in backup_root.findall("testsuite") or backup_root.findall(".//testsuite"):
-            for tc in ts.findall("testcase"):
-                key = (tc.get("classname", ""), tc.get("name", ""))
-                if key in healed_index:
-                    healed_tc = healed_index[key]
-                    tc.clear()
-                    tc.attrib = healed_tc.attrib
-                    for child in healed_tc:
-                        tc.append(child)
-                    replaced_count += 1
-
-        # 重新计算每个 testsuite 的统计属性（tests/failures/errors/skipped）
-        # 因为 testcase 子元素已被替换，但 testsuite 属性仍是旧值
-        for ts in backup_root.findall("testsuite") or backup_root.findall(".//testsuite"):
-            ts_tests = len(ts.findall("testcase"))
-            ts_failures = sum(1 for tc in ts.findall("testcase") if tc.find("failure") is not None)
-            ts_errors = sum(1 for tc in ts.findall("testcase") if tc.find("error") is not None)
-            ts_skipped = sum(1 for tc in ts.findall("testcase") if tc.find("skipped") is not None)
-            ts.set("tests", str(ts_tests))
-            ts.set("failures", str(ts_failures))
-            ts.set("errors", str(ts_errors))
-            ts.set("skipped", str(ts_skipped))
-
-        backup_tree.write(str(output_path), encoding="utf-8", xml_declaration=True)
-        logger.info(f"[MonitorAgent] JUnit 合并完成：替换 {replaced_count} 个用例结果 → {output_path}")
+        merge_junit_files(backup_path, healed_path, output_path)
 
     def _get_spec_filename(self, site_name: str) -> str:
         """根据站点名生成对应的 spec 文件名，如 US → us_carvera.spec.ts"""
@@ -212,13 +174,21 @@ class MonitorAgent(BaseAgent):
             """
             推送飞书卡片到工作群。
 
+            推送前先生成 Allure 详细报告（失败不阻断推送）；
             自愈成功后使用当前 JUnit（反映修复后结果），自愈失败或数据被破坏时使用备份。
-            卡片包含：总用例数、各站点通过/失败明细、自愈结果。
+            卡片包含：总用例数、各站点通过/失败明细、自愈结果、详细报告按钮。
 
             Returns:
                 推送结果（成功/失败）
             """
             logger.info("[工具] push_feishu_report 被调用")
+
+            # 推送前生成 Allure 详细报告（无论测试成功与否都会执行，
+            # 失败时仅告警，不阻断飞书推送，此时卡片不带报告按钮链接）
+            allure_rc, _, _ = runner.generate_allure_report()
+            if allure_rc == 0:
+                logger.info("[MonitorAgent] Allure 报告已就绪，飞书卡片将包含详细报告按钮")
+
             current_junit = runner.get_junit_path()
             # 自愈成功：当前 JUnit 有有效数据（tests > 0）→ 用新数据
             # 自愈失败/数据被破坏：当前 JUnit 为空 → 用备份

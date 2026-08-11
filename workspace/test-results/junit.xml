@@ -1,7 +1,12 @@
 <?xml version='1.0' encoding='utf-8'?>
-<testsuites id="" name="" tests="3" failures="1" skipped="0" errors="0" time="335.723215">
-<testsuite name="smoke\eu_carvera.spec.ts" timestamp="2026-08-07T06:32:39.602Z" hostname="chromium" tests="1" failures="0" skipped="0" time="69.764" errors="0">
-<testcase name="EU 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\eu_carvera.spec.ts" time="69.764">
+<testsuites id="" name="" tests="6" failures="0" skipped="0" errors="1" time="412.691233">
+<testsuite name="smoke\eu_carvera.spec.ts" timestamp="2026-08-11T09:07:23.335Z" hostname="chromium" tests="2" failures="0" skipped="0" time="118.838" errors="0">
+<testcase name="EU 站点 › 商品加入购物车" classname="smoke\eu_carvera.spec.ts" time="94.167"><properties>
+<property name="预期结果" value="点击 Add to cart 后购物车抽屉弹出，且抽屉内可见目标商品">
+</property>
+<property name="前置条件" value="setupPage 完成商店切换，页面停留在 /products/ 商品页">
+</property>
+</properties>
 <system-out>
 [helpers] 🔄 正在导航到: https://eu.makera.com/products/carvera-air
 [helpers] ✅ 导航完成，当前 URL: https://www.makera.com/?utm_source=Makera+EU
@@ -30,31 +35,93 @@
 [helpers]     🔄 第1次点击商店选项...
 [helpers]   🔄 检查幸运转盘...
 [helpers]   ℹ️ 未发现幸运转盘
-[helpers] ✅ 商店切换成功，URL: https://eu.makera.com/fr
+[helpers] ✅ 商店切换成功，URL: https://eu.makera.com/?sgcrxid=1744-6865-29068
 [helpers]   ⏳ 等待 3s 让商店切换完成...
 [helpers]   🔄 重新导航到目标页面: https://eu.makera.com/products/carvera-air
 [helpers]     ⏳ 导航中（超时 60s）...
 [helpers]     ✅ 导航成功
-[helpers]   ✅ 导航完成: https://eu.makera.com/fr/products/carvera-air
+[helpers]   ✅ 导航完成: https://eu.makera.com/products/carvera-air
 [helpers]   🧹 关闭弹窗...
 [helpers]  🧹 开始关闭所有弹窗...
 [helpers]   🔄 检查幸运转盘...
 [helpers]   ℹ️ 未发现幸运转盘
 [helpers]   🔄 检查 Google 翻译弹窗...
 [helpers]   ✅ 已暴力移除 Google 翻译弹窗
+[helpers]   🔄 检查客服悬浮按钮...
+[helpers]   ✅ 客服悬浮按钮处理完成
+[helpers]   🔄 检查顶部导航下拉...
+[helpers]   ✅ 顶部导航下拉处理完成
 [helpers]  🧹 弹窗处理完成
 [helpers] 🔎 最终验证: host=eu.makera.com, 目标=eu.makera.com
-[helpers] ✅✅✅ 页面初始化成功: https://eu.makera.com/fr/products/carvera-air
+[helpers] ✅✅✅ 页面初始化成功: https://eu.makera.com/products/carvera-air
+[EU] ✅ Add to cart 按钮可见，准备点击加购
+[helpers]  🧹 开始关闭所有弹窗...
+[helpers]   🔄 检查幸运转盘...
+[helpers]   ℹ️ 未发现幸运转盘
+[helpers]   🔄 检查 Google 翻译弹窗...
+[helpers]   ✅ 已暴力移除 Google 翻译弹窗
+[helpers]   🔄 检查客服悬浮按钮...
+[helpers]   ✅ 客服悬浮按钮处理完成
+[helpers]   🔄 检查顶部导航下拉...
+[helpers]   ✅ 顶部导航下拉处理完成
+[helpers]  🧹 弹窗处理完成
+[EU] 🛒 已点击 Add to cart，等待购物车抽屉弹出...
+[EU] ✅ 购物车抽屉已弹出
+[EU] ✅ 购物车中存在目标商品: Carvera Air Desktop CNC Machine
 
 </system-out>
 <system-err>
 [helpers] ⚠️ 检测到 IP 跳转: www.makera.com → 尝试切换回目标
 
 </system-err>
-</testcase>
-</testsuite>
-<testsuite name="smoke\global_carvera.spec.ts" timestamp="2026-08-07T06:32:39.602Z" hostname="chromium" tests="1" failures="0" skipped="0" time="131.187" errors="0">
-<testcase name="Global 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\global_carvera.spec.ts" time="53.852"><system-out>
+</testcase><testcase name="EU 站点 › 商品正常进入结算页" classname="smoke\eu_carvera.spec.ts" time="24.671"><properties>
+<property name="预期结果" value="点击 Check out 后跳转结算页 /checkouts/，且订单摘要含目标商品">
+</property>
+<property name="前置条件" value="上一用例已加购成功，购物车抽屉处于弹出状态（沿用页面现场）">
+</property>
+</properties>
+<system-out>
+[EU] ✅ 购物车抽屉已弹出，直接开始点击 Check Out
+[EU] ✅ Check Out 按钮可见，准备进入结算页
+[helpers]  🧹 开始关闭所有弹窗...
+[helpers]   🔄 检查幸运转盘...
+[helpers]   ℹ️ 未发现幸运转盘
+[helpers]   🔄 检查 Google 翻译弹窗...
+[helpers]   ✅ 已暴力移除 Google 翻译弹窗
+[helpers]   🔄 检查客服悬浮按钮...
+[helpers]   ✅ 客服悬浮按钮处理完成
+[helpers]   🔄 检查顶部导航下拉...
+[helpers]   ✅ 顶部导航下拉处理完成
+[helpers]  🧹 弹窗处理完成
+[helpers]  🧹 开始关闭所有弹窗...
+[helpers]   🔄 检查幸运转盘...
+[helpers]   ✅ 已关闭幸运转盘（选择器: button.ecomsend-SpinWheel__Modal__CloseButton）
+[helpers]   🔄 检查 Google 翻译弹窗...
+[helpers]   ✅ 已暴力移除 Google 翻译弹窗
+[helpers]   🔄 检查客服悬浮按钮...
+[helpers]   ✅ 客服悬浮按钮处理完成
+[helpers]   🔄 检查顶部导航下拉...
+[helpers]   ✅ 顶部导航下拉处理完成
+[helpers]  🧹 弹窗处理完成
+[EU] 💳 已点击 Check Out，等待结算页加载...
+[EU] ✅ 等待完成，开始断言
+[EU] ✅ 结算页中存在目标商品: Carvera Air Desktop CNC Machine
+[EU] ✅ 已跳转至结算页: https://eu.makera.com/checkouts/cn/hWNFWfqMqUCLvuGXRdZkM2jA/en-de?_r=AQABLYCzsC5qvSeGb3rJxRPQBvbFiiFQgDUFoVIAVmPD
+
+</system-out>
+<system-err>
+[EU] ⚠️ 第1轮点击失败（可能被浮窗遮挡），重新清理后重试
+
+</system-err>
+</testcase></testsuite>
+<testsuite name="smoke\global_carvera.spec.ts" timestamp="2026-08-11T09:07:23.335Z" hostname="chromium" tests="2" failures="0" skipped="0" time="151.964" errors="0">
+<testcase name="Global 站点 › 商品加入购物车" classname="smoke\global_carvera.spec.ts" time="111.996"><properties>
+<property name="预期结果" value="点击 Add to cart 后购物车抽屉弹出，且抽屉内可见目标商品">
+</property>
+<property name="前置条件" value="setupPage 完成商店切换，页面停留在 /products/ 商品页">
+</property>
+</properties>
+<system-out>
 [helpers] 🔄 正在导航到: https://global.makera.com/products/makera-z1-desktop-cnc
 [helpers] ✅ 导航完成，当前 URL: https://global.makera.com/products/makera-z1-desktop-cnc
 [helpers] 📊 跳转检测 1/20（2s / 40s）: 目标=global.makera.com, 当前=global.makera.com
@@ -99,7 +166,7 @@
 [helpers] 🔍 匹配"United States (EN)"的元素: []
 [helpers] 🔍 页面按钮: ["English","Login","English","Site navigation","Login","Site navigation","My Cart\n              0 items","Calculate","Check out","Clear"]
 [helpers]     ⚠️ 本轮未找到按钮，等待 2s 重试...
-[helpers]     🔍 第7次查找按钮: "United States (EN)"（12s/30s）
+[helpers]     🔍 第7次查找按钮: "United States (EN)"（13s/30s）
 [helpers]   🔄 检查幸运转盘...
 [helpers]   ℹ️ 未发现幸运转盘
 [helpers]     🔄 尝试 6 种选择器查找按钮...
@@ -119,7 +186,7 @@
 [helpers]     🔄 第1次点击商店选项...
 [helpers]   🔄 检查幸运转盘...
 [helpers]   ℹ️ 未发现幸运转盘
-[helpers] ✅ 商店切换成功，URL: https://global.makera.com/
+[helpers] ✅ 商店切换成功，URL: https://global.makera.com/?sgcrxid=1744-6865-29068
 [helpers]   ⏳ 等待 3s 让商店切换完成...
 [helpers]   🔄 重新导航到目标页面: https://global.makera.com/products/makera-z1-desktop-cnc
 [helpers]     ⏳ 导航中（超时 60s）...
@@ -131,18 +198,66 @@
 [helpers]   ℹ️ 未发现幸运转盘
 [helpers]   🔄 检查 Google 翻译弹窗...
 [helpers]   ✅ 已暴力移除 Google 翻译弹窗
+[helpers]   🔄 检查客服悬浮按钮...
+[helpers]   ✅ 客服悬浮按钮处理完成
+[helpers]   🔄 检查顶部导航下拉...
+[helpers]   ✅ 顶部导航下拉处理完成
 [helpers]  🧹 弹窗处理完成
 [helpers] 🔎 最终验证: host=global.makera.com, 目标=global.makera.com
 [helpers] ✅✅✅ 页面初始化成功: https://global.makera.com/products/makera-z1-desktop-cnc
+[Global] ✅ Add to cart 按钮可见，准备点击加购
+[helpers]  🧹 开始关闭所有弹窗...
+[helpers]   🔄 检查幸运转盘...
+[helpers]   ℹ️ 未发现幸运转盘
+[helpers]   🔄 检查 Google 翻译弹窗...
+[helpers]   ✅ 已暴力移除 Google 翻译弹窗
+[helpers]   🔄 检查客服悬浮按钮...
+[helpers]   ✅ 客服悬浮按钮处理完成
+[helpers]   🔄 检查顶部导航下拉...
+[helpers]   ✅ 顶部导航下拉处理完成
+[helpers]  🧹 弹窗处理完成
+[Global] 🛒 已点击 Add to cart，等待购物车抽屉弹出...
+[Global] ✅ 购物车抽屉已弹出
+[Global] ✅ 购物车中存在目标商品: Makera Z1 Desktop CNC
 
 </system-out>
 <system-err>
 [helpers] ⚠️ 检测到 IP 跳转: www.makera.com → 尝试切换回目标
 
 </system-err>
+</testcase><testcase name="Global 站点 › 商品正常进入结算页" classname="smoke\global_carvera.spec.ts" time="15.533"><properties>
+<property name="预期结果" value="点击 Check out 后跳转结算页 /checkouts/，且订单摘要含目标商品">
+</property>
+<property name="前置条件" value="上一用例已加购成功，购物车抽屉处于弹出状态（沿用页面现场）">
+</property>
+</properties>
+<system-out>
+[Global] ✅ 购物车抽屉已弹出，直接开始点击 Check Out
+[Global] ✅ Check Out 按钮可见，准备进入结算页
+[helpers]  🧹 开始关闭所有弹窗...
+[helpers]   🔄 检查幸运转盘...
+[helpers]   ℹ️ 未发现幸运转盘
+[helpers]   🔄 检查 Google 翻译弹窗...
+[helpers]   ✅ 已暴力移除 Google 翻译弹窗
+[helpers]   🔄 检查客服悬浮按钮...
+[helpers]   ✅ 客服悬浮按钮处理完成
+[helpers]   🔄 检查顶部导航下拉...
+[helpers]   ✅ 顶部导航下拉处理完成
+[helpers]  🧹 弹窗处理完成
+[Global] 💳 已点击 Check Out，等待结算页加载...
+[Global] ✅ 等待完成，开始断言
+[Global] ✅ 结算页中存在目标商品: Makera Z1 Desktop CNC
+[Global] ✅ 已跳转至结算页: https://global.makera.com/checkouts/cn/hWNFWgckgcugrXQy43TPXJ8a/en-hk?_r=AQABijZ9EXVNj187KV3NegoYuDsLffIwFQ9Ua_zLiMlU&amp;auto_redirect=false&amp;edge_redirect=true&amp;skip_shop_pay=true&amp;_su_rec=K6eJvn5K4tkeYEF33_WtpMEz6HX1kxhL8Dyq4VZSgZ8tp6cGeyG68GDhqOnNBkZBlAHqy5wXVBgDMMmS_uy2YEzspAVCRtFUrTlQza-fNLUC6Yx_JgNMpLL7IeoKpV9p2bIaUrC60wRtO2AAmTlbSl6JELGkGCAhZchGJ8u3VjQP7bJfuRD2gO5MT4rMro46hAS2UH5wmJZBmvn30HfJvZlr9w
+
+</system-out>
 </testcase></testsuite>
-<testsuite name="smoke\us_carvera.spec.ts" timestamp="2026-08-07T06:32:39.602Z" hostname="chromium" tests="1" failures="0" skipped="0" time="121.602" errors="0">
-<testcase name="US 站点 › 商品详情页 Add to cart 按钮稳定展示" classname="smoke\us_carvera.spec.ts" time="121.602">
+<testsuite name="smoke\us_carvera.spec.ts" timestamp="2026-08-11T09:07:23.335Z" hostname="chromium" tests="2" failures="0" skipped="0" time="118.839" errors="0">
+<testcase name="US 站点 › 商品加入购物车" classname="smoke\us_carvera.spec.ts" time="102.542"><properties>
+<property name="预期结果" value="点击 Add to cart 后购物车抽屉弹出，且抽屉内可见目标商品">
+</property>
+<property name="前置条件" value="setupPage 完成商店切换，页面停留在 /products/ 商品页">
+</property>
+</properties>
 <system-out>
 [helpers] 🔄 正在导航到: https://www.makera.com/products/carvera
 [helpers] ✅ 导航完成，当前 URL: https://www.makera.com/products/carvera
@@ -172,11 +287,67 @@
 [helpers]   ✅ 已关闭幸运转盘（选择器: button.ecomsend-SpinWheel__Modal__CloseButton）
 [helpers]   🔄 检查 Google 翻译弹窗...
 [helpers]   ✅ 已暴力移除 Google 翻译弹窗
+[helpers]   🔄 检查客服悬浮按钮...
+[helpers]   ✅ 客服悬浮按钮处理完成
+[helpers]   🔄 检查顶部导航下拉...
+[helpers]   ✅ 顶部导航下拉处理完成
 [helpers]  🧹 弹窗处理完成
 [helpers] 🔎 最终验证: host=www.makera.com, 目标=www.makera.com
 [helpers] ✅✅✅ 页面初始化成功: https://www.makera.com/products/carvera
+[US] ✅ Add to cart 按钮可见，准备点击加购
+[helpers]  🧹 开始关闭所有弹窗...
+[helpers]   🔄 检查幸运转盘...
+[helpers]   ℹ️ 未发现幸运转盘
+[helpers]   🔄 检查 Google 翻译弹窗...
+[helpers]   ✅ 已暴力移除 Google 翻译弹窗
+[helpers]   🔄 检查客服悬浮按钮...
+[helpers]   ✅ 客服悬浮按钮处理完成
+[helpers]   🔄 检查顶部导航下拉...
+[helpers]   ✅ 顶部导航下拉处理完成
+[helpers]  🧹 弹窗处理完成
+[US] 🛒 已点击 Add to cart，等待购物车抽屉弹出...
+[helpers]  🧹 开始关闭所有弹窗...
+[helpers]   🔄 检查幸运转盘...
+[helpers]   ℹ️ 未发现幸运转盘
+[helpers]   🔄 检查 Google 翻译弹窗...
+[helpers]   ✅ 已暴力移除 Google 翻译弹窗
+[helpers]   🔄 检查客服悬浮按钮...
+[helpers]   ✅ 客服悬浮按钮处理完成
+[helpers]   🔄 检查顶部导航下拉...
+[helpers]   ✅ 顶部导航下拉处理完成
+[helpers]  🧹 弹窗处理完成
+[US] ✅ 购物车抽屉已弹出
+[US] ✅ 购物车中存在目标商品: Carvera Desktop CNC Machine
 
 </system-out>
-</testcase>
-</testsuite>
+<system-err>
+[US] ⚠️ 第1轮：购物车抽屉未弹出，清理浮窗后重新点击加购
+
+</system-err>
+</testcase><testcase name="US 站点 › 商品正常进入结算页" classname="smoke\us_carvera.spec.ts" time="16.297"><properties>
+<property name="预期结果" value="点击 Check out 后跳转结算页 /checkouts/，且订单摘要含目标商品">
+</property>
+<property name="前置条件" value="上一用例已加购成功，购物车抽屉处于弹出状态（沿用页面现场）">
+</property>
+</properties>
+<system-out>
+[US] ✅ 购物车抽屉已弹出，直接开始点击 Check Out
+[US] ✅ Check Out 按钮可见，准备进入结算页
+[helpers]  🧹 开始关闭所有弹窗...
+[helpers]   🔄 检查幸运转盘...
+[helpers]   ℹ️ 未发现幸运转盘
+[helpers]   🔄 检查 Google 翻译弹窗...
+[helpers]   ✅ 已暴力移除 Google 翻译弹窗
+[helpers]   🔄 检查客服悬浮按钮...
+[helpers]   ✅ 客服悬浮按钮处理完成
+[helpers]   🔄 检查顶部导航下拉...
+[helpers]   ✅ 顶部导航下拉处理完成
+[helpers]  🧹 弹窗处理完成
+[US] 💳 已触发 Check Out，等待结算页加载...
+[US] ✅ 等待完成，开始断言
+[US] ✅ 结算页中存在目标商品: Carvera Desktop CNC Machine
+[US] ✅ 已跳转至结算页: https://www.makera.com/checkouts/cn/hWNFWgJikvYYPCUz1mmztyhM/en-us?_r=AQABtA6TsnlKTULPBwySuRbGdUuNylccV3IRN6PdlI-s&amp;auto_redirect=false&amp;edge_redirect=true&amp;skip_shop_pay=true&amp;_su_rec=Ow3qKreDEdW4h_GAmE7tWBz3lDXVLnlYBpPYsa1Zx8IMTKGbKb2AVntQ29Z9LbzWykNk-bVA4XKZZ8rA6dVsxhhWdH73ioT8tzEf6PRD-S10-LdJ-3qnlXpTJQQJmO-U53KfyrWZiNtGp25Z248FJT3h054-ys7_CVdbxDL_-OLft3ZXm3ALUH6Lv6fmZr1ADwcXTN-ef4m7LTbYdqvSng0
+
+</system-out>
+</testcase></testsuite>
 </testsuites>

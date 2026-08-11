@@ -23,6 +23,11 @@ export default defineConfig({
   // 测试文件目录：所有 .spec.ts 文件存放位置
   testDir: './src/web/testcases',
 
+  // 失败产物输出目录（截图/录屏/trace/.last-run.json）：
+  // 统一收敛到 workspace 下（已被 .gitignore 忽略且 CI 会上传），
+  // 避免默认在项目根目录生成杂乱的 test-results/
+  outputDir: 'workspace/test-results/artifacts',
+
   // 超时设置（毫秒）— Makera 网站加载较慢，适当放宽
   timeout: 300_000,
   expect: { timeout: 30_000 },
@@ -36,13 +41,20 @@ export default defineConfig({
   // CI 环境下重试次数（本地不重试）
   retries: process.env.CI ? 2 : 0,
 
-  // 报告器配置：同时使用 list（终端）+ junit（XML）+ html（网页报告）
+  // 报告器配置：同时使用 list（终端）+ junit（XML）+ html（网页报告）+ allure（详细报告）
   // junit.xml 供后续 Python 解析并推送飞书
   // html 报告供人工查看测试详情
+  // allure-results 供生成 Allure 详细报告（步骤/参数/附件），CI 部署到 GitHub Pages
+  // 输出目录通过 ALLURE_RESULTS 环境变量区分：全量跑与自愈重跑写入不同目录，避免互相污染
   reporter: [
     ['list'],
     ['junit', { outputFile: 'workspace/test-results/junit.xml' }],
     ['html', { outputFolder: 'workspace/test-results/html', open: 'never' }],
+    ['allure-playwright', {
+      outputFolder: process.env.ALLURE_RESULTS || 'workspace/allure-results',
+      detail: true,
+      suiteTitle: true,
+    }],
   ],
 
   // 全局测试设置

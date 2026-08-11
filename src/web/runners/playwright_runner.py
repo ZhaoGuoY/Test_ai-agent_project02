@@ -2,6 +2,7 @@
 """
 Playwright Runner（增量2：增加 generate_specs 方法）
 """
+import os
 import subprocess
 import shutil
 import sys
@@ -32,6 +33,11 @@ class PlaywrightRunner:
         Args:
             test_dir: 指定测试目录，为空则运行 testDir 下所有测试
             spec_file: 指定单个 spec 文件路径，只运行该文件中的用例（比 -g 更可靠）
+
+        Allure 结果目录策略（通过 ALLURE_RESULTS 环境变量注入子进程）：
+        - 全量跑 → workspace/allure-results（执行前清空两个结果目录，避免旧数据污染）
+        - 自愈重跑（指定 spec_file）→ workspace/allure-heal-results（不清空，
+          保留同一轮监控内其他站点的重跑结果，生成报告时以最新一次为准）
         """
         npx = self.npx_path or "npx"
         cmd = [npx, "playwright", "test", "--workers=1"]
@@ -40,14 +46,30 @@ class PlaywrightRunner:
         elif test_dir:
             cmd.append(test_dir)
 
+        # Allure 结果目录注入：全量跑与自愈重跑分开存放
+        env = os.environ.copy()
+        full_results_dir = self.project_root / "workspace" / "allure-results"
+        heal_results_dir = self.project_root / "workspace" / "allure-heal-results"
+        if spec_file:
+            env["ALLURE_RESULTS"] = str(heal_results_dir)
+        else:
+            env["ALLURE_RESULTS"] = str(full_results_dir)
+            # 全量跑前清空两个结果目录（无论是否有残留文件都会执行），
+            # 确保本轮报告不含上一轮监控的旧数据
+            for d in (full_results_dir, heal_results_dir):
+                if d.exists():
+                    shutil.rmtree(str(d), ignore_errors=True)
+
         logger.info(f"执行命令: {' '.join(cmd)}")
         logger.info(f"工作目录: {self.project_root}")
+        logger.info(f"Allure 结果目录: {env['ALLURE_RESULTS']}")
 
         try:
             # 实时流式输出，让执行过程日志可见
             process = subprocess.Popen(
                 cmd,
                 cwd=str(self.project_root),
+                env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -137,3 +159,54 @@ class PlaywrightRunner:
     def get_junit_path(self) -> Path:
         """获取 JUnit XML 报告路径"""
         return self.project_root / "workspace" / "test-results" / "junit.xml"
+
+    def generate_allure_report(self) -> Tuple[int, str, str]:
+        """
+        生成 Allure 静态报告：合并全量跑与自愈重跑两个结果目录
+
+        同一用例在两个目录中都有结果时（自愈后重跑），Allure 以最新一次为准，
+        旧结果显示为 retry 记录，报告反映的是最终真实状态。
+        失败仅告警不阻断主流程（报告生成失败不影响飞书推送）。
+
+        Returns:
+            (return_code, stdout, stderr)；无结果数据时返回 (-1, "", "无 Allure 结果数据")
+        """
+        report_dir = self.project_root / "workspace" / "allure-report"
+        results_dirs = [
+            d for d in (
+                self.project_root / "workspace" / "allure-results",
+                self.project_root / "workspace" / "allure-heal-results",
+            )
+            if d.exists() and any(d.iterdir())
+        ]
+        if not results_dirs:
+            logger.warning("[Allure] 无结果数据目录，跳过报告生成")
+            return -1, "", "无 Allure 结果数据"
+
+        npx = self.npx_path or "npx"
+        cmd = [npx, "allure", "generate"] + [str(d) for d in results_dirs] + [
+            "-o", str(report_dir), "--clean"
+        ]
+        logger.info(f"生成 Allure 报告命令: {' '.join(cmd)}")
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=str(self.project_root),
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=120,
+            )
+            logger.info(f"Allure 报告生成完成，返回码: {result.returncode}")
+            if result.returncode == 0:
+                logger.info(f"[Allure] 报告已生成 → {report_dir}")
+            else:
+                logger.warning(f"[Allure] 报告生成失败（不阻断主流程）: {result.stderr[:300]}")
+            return result.returncode, result.stdout, result.stderr
+        except subprocess.TimeoutExpired as e:
+            logger.warning(f"[Allure] 报告生成超时（不阻断主流程）: {e}")
+            return -1, "", "TimeoutExpired"
+        except Exception as e:
+            logger.warning(f"[Allure] 报告生成异常（不阻断主流程）: {e}")
+            return -1, "", str(e)

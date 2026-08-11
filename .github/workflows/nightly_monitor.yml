@@ -11,9 +11,9 @@ on:
   push:
     branches: [ "master" ]
 
-  # 定时触发：UTC 22:50（北京时间次日 6:50）
+  # 定时触发：UTC 23:00（北京时间次日7.）
   schedule:
-    - cron: '50 22 * * *'
+    - cron: '0 23 * * *'
 
   # 手动触发（用于测试和调试）
   workflow_dispatch:
@@ -23,6 +23,12 @@ env:
   FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
   DEEPSEEK_API_KEY: ${{ secrets.LLM_API_KEY }}
 
+# GitHub Pages 部署权限（Allure 报告托管）
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   monitor:
     # 使用 Ubuntu 最新 LTS 版本
@@ -30,6 +36,11 @@ jobs:
 
     # 超时时间：整个 job 最长 30 分钟
     timeout-minutes: 30
+
+    # GitHub Pages 部署环境（Allure 报告发布）
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       # 1. 检出代码
@@ -76,8 +87,19 @@ jobs:
         run: python scripts/run_monitor.py
         # 即使脚本返回非零退出码，也继续执行后续步骤（上传 artifact）
         continue-on-error: true
+        env:
+          # 飞书卡片"查看详细测试报告"按钮指向的 GitHub Pages 报告地址
+          ALLURE_REPORT_URL: https://zhaoguoy.github.io/Test_ai-agent_project02/
 
-      # 9. 上传测试报告（JUnit XML + HTML）
+      # 9. 生成 Allure 静态报告（合并全量结果与自愈重跑结果）
+      - name: Generate Allure report
+        if: always()
+        run: |
+          mkdir -p workspace/allure-results workspace/allure-heal-results
+          npx allure generate workspace/allure-results workspace/allure-heal-results -o workspace/allure-report --clean
+        continue-on-error: true
+
+      # 10. 上传测试报告（JUnit XML + HTML + Allure）
       #    即使测试失败，报告也应保留以供分析
       - name: Upload test reports
         if: always()   # 无论前一步成功与否都执行
@@ -87,9 +109,26 @@ jobs:
           path: |
             workspace/test-results/
             workspace/logs/
+            workspace/allure-report/
           retention-days: 7   # 保留 7 天
 
-      # 10. 输出执行结果（便于在 Actions 日志中查看）
+      # 11. 部署 Allure 报告到 GitHub Pages（供飞书卡片按钮跳转查看）
+      - name: Setup Pages
+        if: always()
+        uses: actions/configure-pages@v4
+
+      - name: Upload Pages artifact
+        if: always()
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: workspace/allure-report
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        if: always()
+        uses: actions/deploy-pages@v2
+
+      # 12. 输出执行结果（便于在 Actions 日志中查看）
       - name: Print execution status
         if: always()
         run: |

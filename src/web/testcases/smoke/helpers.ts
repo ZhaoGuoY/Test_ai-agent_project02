@@ -5,8 +5,10 @@
  * 职责：
  * - 关闭幸运转盘弹窗（优先点击 ×，失败则点击遮罩层或 Escape）
  * - 关闭 Google 翻译弹窗（精确选择器优先，失败则暴力移除）
+ * - 移除第三方客服悬浮按钮（避免遮挡 Add to cart 等按钮导致点击错位）
  * - 通过商店切换器 UI 切换回目标站点（循环检测+重试）
  * - 页面初始化（导航 → 循环检测跳转 → 循环查找切换按钮 → 验证）
+ * - Shopify AJAX API 兜底加购（原生表单 POST 被拒时的降级方案）
  *
  * 被 us_carvera.spec.ts / eu_carvera.spec.ts / global_carvera.spec.ts 引用
  */
@@ -25,7 +27,9 @@ async function dismissSpinPopup(page: Page): Promise<void> {
   for (const selector of closeSelectors) {
     const btn = page.locator(selector).first();
     if (await btn.isVisible({ timeout: 200 }).catch(() => false)) {
-      await btn.click();
+      // 显式 timeout 5s：click() 默认继承测试级超时（300s），
+      // 若关闭按钮被其他浮窗遮挡会长时间阻塞导致整个流程卡死
+      await btn.click({ timeout: 5000 }).catch(() => {});
       console.log(`[helpers]   ✅ 已关闭幸运转盘（选择器: ${selector}）`);
       await page.waitForTimeout(200);
       return;
@@ -50,7 +54,8 @@ async function dismissGoogleTranslate(page: Page): Promise<void> {
   for (const selector of selectors) {
     const btn = page.locator(selector).first();
     if (await btn.isVisible({ timeout: 800 }).catch(() => false)) {
-      await btn.click();
+      // 显式 timeout 5s 防遮挡时长时间阻塞（click 默认继承测试级 300s 超时）
+      await btn.click({ timeout: 5000 }).catch(() => {});
       console.log(`[helpers]   ✅ 已关闭 Google 翻译弹窗（选择器: ${selector}）`);
       await page.waitForTimeout(300);
       return;
@@ -68,12 +73,108 @@ async function dismissGoogleTranslate(page: Page): Promise<void> {
 }
 
 /**
- * 关闭所有已知弹窗
+ * 移除第三方客服悬浮按钮（右下角对话气泡小部件）
+ *
+ * 该悬浮按钮固定定位在页面右下角，会遮挡 Add to cart 等按钮：
+ * Playwright 点击被遮挡元素时点击会落在悬浮按钮上，导致点击错位、加购失败。
+ * 策略：优先尝试点击其关闭按钮（安全方式），失败则 JS 暴力移除（仅删除悬浮
+ * DOM 元素，不触发导航，不影响加购表单）。
+ *
+ * 导出供 spec 文件在点击关键按钮前二次清理（悬浮部件可能在滚动后延迟加载）。
  */
-async function dismissAllPopups(page: Page): Promise<void> {
+export async function dismissChatWidget(page: Page): Promise<void> {
+  console.log(`[helpers]   🔄 检查客服悬浮按钮...`);
+  // 第一步：尝试点击悬浮部件自带的关闭按钮
+  const closeSelectors = [
+    '[aria-label*="close chat" i]',
+    '[aria-label*="close widget" i]',
+    '[aria-label*="close launcher" i]',
+    '[aria-label*="关闭" i]',
+    'button[class*="launcher"] [class*="close" i]',
+    '[id*="chat"] [aria-label*="close" i]',
+  ];
+  for (const selector of closeSelectors) {
+    const btn = page.locator(selector).first();
+    if (await btn.isVisible({ timeout: 200 }).catch(() => false)) {
+      await btn.click().catch(() => {});
+      console.log(`[helpers]   ✅ 已点击客服悬浮部件关闭按钮（选择器: ${selector}）`);
+      await page.waitForTimeout(300);
+    }
+  }
+
+  // 第二步：JS 移除右下角固定定位的悬浮部件及其容器（兜底，确保不再遮挡）
+  await page.evaluate(() => {
+    const removeBySelector = (sel: string) => {
+      document.querySelectorAll(sel).forEach(el => (el as HTMLElement).remove());
+    };
+    // 常见第三方客服/聊天部件
+    removeBySelector(
+      '[id*="chat-widget" i], [id*="chatwidget" i], [class*="chat-launcher" i], ' +
+      '[class*="chatLauncher" i], [class*="messenger" i], [id*="intercom" i], ' +
+      '[id*="crisp" i], [class*="crisp" i], [id*="tawk" i], [id*="lazychat" i], ' +
+      '[id*="button-io" i], [id*="ButtonWidget" i], [class*="button-widget" i]'
+    );
+    // 兜底：移除 viewport 右下角的固定定位小元素（悬浮按钮的典型特征）
+    const vw = window.innerWidth, vh = window.innerHeight;
+    document.querySelectorAll('div, button, iframe').forEach(el => {
+      const htmlEl = el as HTMLElement;
+      const style = window.getComputedStyle(htmlEl);
+      if (style.position !== 'fixed' || style.display === 'none' || style.visibility === 'hidden') return;
+      const rect = htmlEl.getBoundingClientRect();
+      // 位于右下角 200px 区域内、宽高不超过 120px 的固定元素视为悬浮部件
+      if (rect.width > 0 && rect.width <= 120 && rect.height > 0 && rect.height <= 120 &&
+          rect.left >= vw - 200 && rect.top >= vh - 200) {
+        htmlEl.remove();
+      }
+    });
+  }).catch(() => {});
+  console.log(`[helpers]   ✅ 客服悬浮按钮处理完成`);
+}
+
+/**
+ * 关闭顶部导航 hover 下拉面板（megaMenu，如 Software 下拉）
+ *
+ * 该下拉无关闭按钮，鼠标划过顶部导航时自动展开，会遮挡页面下方
+ * Add to cart 等元素。关闭方式：将鼠标移到下方阴影遮罩区域使其
+ * 失去 hover 焦点自动收起；JS 兜底移除仍未收起的浮层。
+ */
+export async function dismissNavDropdown(page: Page): Promise<void> {
+  console.log(`[helpers]   🔄 检查顶部导航下拉...`);
+  // 第一步：将鼠标焦点移离顶部导航到下方阴影遮罩区域（页面下方 75% 处），hover 下拉失焦收起
+  const vp = page.viewportSize() ?? { width: 1280, height: 720 };
+  await page.mouse.move(vp.width / 2, vp.height * 0.75, { steps: 5 }).catch(() => {});
+  await page.waitForTimeout(400);
+  // 第二步：JS 兜底移除仍展开在顶部的大面积浮层（megaMenu 特征：顶部 fixed/absolute、高>200px）
+  await page.evaluate(() => {
+    document.querySelectorAll(
+      '[class*="megaMenu" i], [class*="mega-menu" i], nav [class*="dropdown" i]'
+    ).forEach(el => {
+      const htmlEl = el as HTMLElement;
+      const style = window.getComputedStyle(htmlEl);
+      if (style.display === 'none' || style.visibility === 'hidden') return;
+      if (style.position !== 'fixed' && style.position !== 'absolute') return;
+      const rect = htmlEl.getBoundingClientRect();
+      // 仅移除占据顶部区域的大浮层（下拉面板特征），避免误删其他元素
+      if (rect.top < 200 && rect.height > 200 && rect.width > 300) {
+        htmlEl.remove();
+      }
+    });
+  }).catch(() => {});
+  console.log(`[helpers]   ✅ 顶部导航下拉处理完成`);
+}
+
+/**
+ * 关闭所有已知弹窗（幸运转盘 + Google 翻译 + 客服悬浮按钮 + 导航 hover 下拉）
+ *
+ * 导出供 spec 文件在点击关键按钮的每轮重试前循环调用，
+ * 应对延迟弹出的浮窗遮挡导致的点击失败。
+ */
+export async function dismissAllPopups(page: Page): Promise<void> {
   console.log(`[helpers]  🧹 开始关闭所有弹窗...`);
   await dismissSpinPopup(page);
   await dismissGoogleTranslate(page);
+  await dismissChatWidget(page);
+  await dismissNavDropdown(page);
   await page.waitForTimeout(300);
   console.log(`[helpers]  🧹 弹窗处理完成`);
 }
@@ -146,7 +247,7 @@ async function switchToTargetStore(page: Page, targetUrl: string): Promise<boole
     if (switcherButton) {
       buttonFound = true;
       console.log(`[helpers]     ✅ 找到按钮，点击打开弹窗...`);
-      await switcherButton.click({ force: true }); // force 点击，忽略转盘遮挡
+      await switcherButton.click({ force: true, timeout: 5000 }); // force 点击，忽略转盘遮挡；显式超时防阻塞
       console.log(`[helpers]     ⏳ 等待 500ms 让弹窗渲染...`);
       await page.waitForTimeout(500); // 等弹窗渲染，立即进入查找
       console.log(`[helpers]     ✅ 弹窗已打开，进入选项查找`);
@@ -226,7 +327,7 @@ async function switchToTargetStore(page: Page, targetUrl: string): Promise<boole
       let navigationSuccess = false;
       for (let attempt = 1; attempt <= 3; attempt++) {
         console.log(`[helpers]     🔄 第${attempt}次点击商店选项...`);
-        await storeOption.click({ force: true });
+        await storeOption.click({ force: true, timeout: 5000 }); // 显式超时防阻塞
         await page.waitForTimeout(500);
         // 点击后立即关闭可能重新出现的幸运转盘
         await dismissSpinPopup(page);
@@ -350,4 +451,67 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
   }
   console.log(`[helpers] ❌❌ 页面初始化失败: ${finalUrl}，目标 host: ${targetHost}`);
   return false;
+}
+
+/**
+ * Shopify AJAX API 兜底加购（降级方案）
+ *
+ * 背景：商品页半渲染（主题 JS 未完成水合）时，点击 Add to cart 会触发
+ * 原生表单 POST 到 /cart/add，因缺少 items/变体参数被 Shopify 拒绝，
+ * 页面被导航到错误页，购物车抽屉永远不会弹出。
+ *
+ * 本函数绕过前端表单，直接调用 Shopify 标准 AJAX 接口：
+ * 1. 从当前 URL 解析商品 handle（/products/<handle>）
+ * 2. 请求 /products/<handle>.js 获取首个可购买变体 ID
+ * 3. POST /cart/add.js 携带真实变体 ID 加购
+ *
+ * 注意：调用时页面通常已停留在 /cart/add 错误页，因此 handle 必须从
+ * 显式传入的商品 URL 解析；接口均为同域 AJAX 请求，不依赖当前页面
+ * DOM 状态，在错误页上也能正常执行。
+ *
+ * @param productUrl 目标商品页 URL（如 https://eu.makera.com/products/carvera-air）
+ * @returns true=加购成功，false=失败（handle 解析失败/变体 ID 获取失败/API 返回非 2xx）
+ */
+export async function addToCartViaApi(page: Page, productUrl: string): Promise<boolean> {
+  try {
+    // 1. 从传入的商品 URL 解析 handle（不能用 page.url()，此时可能已在错误页）
+    const pathname = new URL(productUrl).pathname;
+    const handle = pathname.split('/products/')[1]?.split(/[?#/]/)[0];
+    if (!handle) {
+      console.error(`[helpers] ❌ 无法从商品 URL 解析 handle: ${productUrl}`);
+      return false;
+    }
+
+    // 2. 获取商品 JSON，取首个变体 ID（Shopify 商品页标准端点，无需鉴权）
+    const variantId = await page.evaluate(async (h) => {
+      const res = await fetch(`/products/${h}.js`, { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data?.variants?.[0]?.id ?? null;
+    }, handle);
+    if (!variantId) {
+      console.error(`[helpers] ❌ 获取商品变体 ID 失败（handle: ${handle}）`);
+      return false;
+    }
+
+    // 3. 调用 /cart/add.js 加购（携带真实变体 ID，避开原生表单缺 items 参数的问题）
+    const ok = await page.evaluate(async (id) => {
+      const res = await fetch('/cart/add.js', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ id, quantity: 1 }),
+      });
+      return res.ok;
+    }, variantId);
+
+    if (ok) {
+      console.log(`[helpers] ✅ 兜底加购成功（AJAX API，变体 ID: ${variantId}）`);
+    } else {
+      console.error(`[helpers] ❌ 兜底加购 API 返回非 2xx（变体 ID: ${variantId}）`);
+    }
+    return ok;
+  } catch (err) {
+    console.warn(`[helpers] ⚠️ 兜底加购异常: ${err}`);
+    return false;
+  }
 }

@@ -5,8 +5,12 @@ __pycache__/        # Python 字节码缓存（.pyc 文件）
 *.py[cod]           # Python 编译后的文件（.pyc/.pyo/.pyd）
 
 # ====================== 2. 测试产物 ======================
+test-results/              # Playwright 默认失败产物目录（保险条目，正常已收敛到 workspace 下）
 workspace/test-results/  # Playwright 测试结果（如 JSON/XML 报告）
 workspace/logs/         # 日志文件（如 monitor.log）
+workspace/allure-results/      # Allure 原始结果数据（全量跑）
+workspace/allure-heal-results/ # Allure 原始结果数据（自愈重跑）
+workspace/allure-report/       # Allure 生成的静态报告
 workspace/*.py          # Agent 生成的临时脚本（如 check_*.py、run_*.py）
 playwright-report/      # Playwright HTML 报告
 check_*.py             # Agent 生成的临时检查脚本

@@ -6,6 +6,7 @@
 https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot
 https://open.feishu.cn/document/feishu-cards/quick-start/send-message-cards-with-custom-bot
 """
+import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, Any
@@ -42,6 +43,15 @@ class FeishuNotifier:
             )
 
         self.webhook_url = webhook_url
+
+        # Allure 详细报告链接：环境变量 ALLURE_REPORT_URL 优先（CI 注入 GitHub Pages 地址），
+        # 其次取 settings.yaml 的 feishu.report_url；为空时卡片不显示报告按钮
+        config_for_report = load_config()
+        self.report_url = (
+            os.environ.get("ALLURE_REPORT_URL", "")
+            or config_for_report.get("feishu", {}).get("report_url", "")
+            or ""
+        ).strip()
 
     def parse_junit(self, junit_path: str | Path) -> Dict[str, Any]:
         """
@@ -221,6 +231,25 @@ class FeishuNotifier:
                 }
             ]
         }
+
+        # Allure 详细报告按钮：仅在配置了报告链接时显示（CI 环境注入 GitHub Pages 地址，
+        # 本地未配置时不显示，其余卡片内容不受影响）
+        if self.report_url:
+            # 插入到 note 备注之前，作为卡片底部的行动按钮
+            card["elements"].insert(-1, {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {
+                            "content": "查看详细测试报告",
+                            "tag": "plain_text"
+                        },
+                        "type": "primary",
+                        "url": self.report_url
+                    }
+                ]
+            })
 
         # 构建请求体
         payload = {

@@ -19,6 +19,7 @@ HealAgent：自愈 Agent（增量4 + 多站点分离架构）
 """
 from typing import Any, List, Dict, Optional
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -28,7 +29,7 @@ from langchain_core.tools import tool
 from src.app.agents.base_agent import BaseAgent
 from src.core.logger import get_logger
 from src.web.runners.playwright_runner import PlaywrightRunner
-from src.web.runners.report_parser import parse_junit_failures, get_summary
+from src.web.runners.report_parser import parse_junit_failures, get_summary, merge_junit_files
 
 logger = get_logger(__name__)
 
@@ -222,7 +223,38 @@ class HealAgent(BaseAgent):
                 rel_path = f"src/web/testcases/smoke/{spec_file}"
             else:
                 rel_path = None
+
+            # 重跑前快照当前 junit.xml：Playwright 每次执行都会整体覆盖 junit.xml，
+            # 若不合并，先前站点重跑通过的结果会被后续站点的重跑覆盖丢失
+            #（飞书曾因此把已自愈成功的站点误报为失败）
+            snapshot = junit_path.with_suffix('.xml.snapshot')
+            if junit_path.exists():
+                shutil.copy2(str(junit_path), str(snapshot))
+            mtime_before = junit_path.stat().st_mtime if junit_path.exists() else 0
+
             return_code, stdout, stderr = runner.run_tests(spec_file=rel_path)
+
+            mtime_after = junit_path.stat().st_mtime if junit_path.exists() else 0
+            stale_warning = ""
+            if return_code != 0 and mtime_after <= mtime_before:
+                # junit 未更新 → 重跑未产生有效报告（典型原因：spec 文件语法/编译错误，用例根本没被执行）
+                stale_warning = ("⚠️ 严重警告：return_code 非 0 但 JUnit 报告未更新（仍为旧数据）！"
+                                 "说明本次重跑没有执行任何用例，最常见原因是 spec 文件存在语法/编译错误。"
+                                 "绝对不能判定为通过！请先检查该 spec 文件语法（如自愈写入的定位器行是否合法），"
+                                 "修复后重新调用 heal_single_case 再重跑。")
+                logger.warning(f"[工具] {stale_warning}")
+            elif return_code != 0 and get_summary(junit_path).get("tests", 0) == 0:
+                # junit 被覆盖为空报告 → 恢复快照，防止空报告让 check_if_all_passed 误判全部通过
+                if snapshot.exists():
+                    shutil.copy2(str(snapshot), str(junit_path))
+                stale_warning = ("⚠️ 严重警告：return_code 非 0 但 JUnit 为空（0 用例）！"
+                                 "用例根本没被执行（疑似 spec 语法错误），已恢复重跑前的报告。"
+                                 "绝对不能判定为通过！请检查 spec 文件语法后重试。")
+                logger.warning(f"[工具] {stale_warning}")
+            elif snapshot.exists():
+                # 正常情况：将本次重跑结果增量合并回快照（保留其他站点的结果）
+                merged = merge_junit_files(snapshot, junit_path, junit_path)
+                logger.info(f"[工具] 重跑结果已合并回累积报告，替换 {merged} 个用例")
 
             # 解析失败列表并刷新白名单
             failures = parse_junit_failures(junit_path)
@@ -236,6 +268,8 @@ class HealAgent(BaseAgent):
                 "passed_count": summary.get("pass", 0),
                 "⚠️警告": "只修复 failures 数组中的用例，pass 数组中的用例已通过，禁止触碰！"
             }
+            if stale_warning:
+                result["⚠️报告异常"] = stale_warning
             return json.dumps(result, ensure_ascii=False)
 
         @tool
@@ -247,6 +281,11 @@ class HealAgent(BaseAgent):
                 "true" 或 "false" 以及简要统计
             """
             summary = get_summary(junit_path)
+            # 防护：JUnit 为空（0 用例）不能视为全部通过——
+            # 通常是 spec 编译失败导致用例根本没被执行，曾因此误判 Global 失败用例已全部通过
+            if summary.get("tests", 0) == 0:
+                return ("false (JUnit 报告为空/无有效用例，不能判定为通过！"
+                        "通常是 spec 文件语法错误导致用例未执行，请检查 run_tests 的 return_code 和报告异常警告)")
             total_failures = summary["failures"] + summary["errors"]
             if total_failures == 0:
                 return f"true (全部通过: {summary['pass']}/{summary['tests']})"
@@ -328,6 +367,8 @@ class HealAgent(BaseAgent):
    - classname: 失败用例的 classname 字段（用于自动定位 spec 文件）
 5. **检查 heal_single_case 返回值**：
    - 如果返回 ✅ 修复成功 → 调用 `run_tests_and_get_failures(spec_file="站点spec文件名")` 验证
+     （包括环境类失败：heal_specs 判定页面初始化失败等环境/网络错误时不修改代码也返回 ✅，
+     此时同样必须调用 run_tests 重跑验证，因为重跑才是此类失败的正确应对）
    - 如果返回 ❌ 修复失败 / ⏰ 超时 → **禁止调用 run_tests**，必须分析错误原因并重试 heal_single_case
    - 如 classname 含 "eu_" → spec_file="eu_carvera.spec.ts"
    - 如 classname 含 "us_" → spec_file="us_carvera.spec.ts"
@@ -347,6 +388,7 @@ class HealAgent(BaseAgent):
    - **根据错误分析中的建议修改代码**（如添加 dismissSpinPopup、使用 force: true 等）
 5. **检查 heal_single_case 返回值**：
    - ✅ 修复成功 → 调用 `run_tests_and_get_failures(spec_file="对应站点的spec文件名")` 验证
+     （环境类失败不修改代码也返回 ✅，同样必须重跑验证，确保失败用例至少获得一次重跑机会）
    - ❌ 失败 / ⏰ 超时 → **禁止调用 run_tests**，分析错误后重试 heal_single_case
 6. 调用 `check_if_all_passed` 判断结果
 7. 如果还有失败且重试次数 < {self.MAX_RETRIES}，回到步骤4
@@ -367,6 +409,9 @@ class HealAgent(BaseAgent):
 - **heal_single_case 返回失败/超时时，绝对不允许直接调用 run_tests_and_get_failures**
   - 必须先分析错误原因（如 ts-node 不存在、超时、脚本异常等），尝试解决后重新调用 heal_single_case
   - 只有 heal_single_case 返回 ✅ 修复成功 后，才能调用 run_tests_and_get_failures 验证
+- **报告一致性判定（重要）**：若 run_tests_and_get_failures 返回的 return_code 非 0，
+  即使 failures 为空也绝对不能判定为通过（说明用例根本没被执行，常见于 spec 语法错误）；
+  返回结果中如出现「⚠️报告异常」字段，必须按其指示检查 spec 文件语法后重试修复
 - 不要重复修复同一个用例超过一次（除非它在重新测试后仍然失败）
 - **绝对不要使用测试用例名称作为 run_tests_and_get_failures 的参数，必须使用 spec 文件名**
 """

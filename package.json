@@ -5,11 +5,16 @@
   "description": "AI Agent 驱动的 Web 自动化监控项目",
   "scripts": {
     "test": "playwright test",
-    "explore": "npx ts-node src/web/scripts_B/explore_page.ts"
+    "explore": "npx ts-node src/web/scripts_B/explore_page.ts",
+    "report:generate": "allure generate workspace/allure-results workspace/allure-heal-results -o workspace/allure-report --clean",
+    "report:open": "allure open workspace/allure-report"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",
-    "typescript": "^5.6.0",
-    "ts-node": "^10.9.2"
+    "allure-commandline": "^2.43.0",
+    "allure-js-commons": "^3.10.2",
+    "allure-playwright": "^3.10.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.0"
   }
 }
