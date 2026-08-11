@@ -115,7 +115,7 @@ jobs:
       # 11. 部署 Allure 报告到 GitHub Pages（供飞书卡片按钮跳转查看）
       - name: Setup Pages
         if: always()
-        uses: actions/configure-pages@v4
+        uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
         if: always()
@@ -126,7 +126,7 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         if: always()
-        uses: actions/deploy-pages@v2
+        uses: actions/deploy-pages@v4
 
       # 12. 输出执行结果（便于在 Actions 日志中查看）
       - name: Print execution status
