@@ -28,8 +28,9 @@ feishu:
   webhook_url: "${FEISHU_WEBHOOK_URL}"   # 从环境变量读取，避免泄露
   # Allure 详细报告链接（飞书卡片“查看详细测试报告”按钮的跳转地址）
   # 指向 GitHub Pages 永久链接（CI 每次监控后自动部署最新报告），本地/CI 均会显示按钮；
+  # ⚠️ Pages 站点 URL 保留仓库名原始大小写，小写地址会 404；
   # 如需覆盖可设置环境变量 ALLURE_REPORT_URL（优先级更高）
-  report_url: "https://zhaoguoy.github.io/test_ai-agent_project02/"
+  report_url: "https://zhaoguoy.github.io/Test_ai-agent_project02/"
 
 # LLM 配置（增量3使用）
 llm:

@@ -84,8 +84,8 @@ jobs:
         continue-on-error: true
         env:
           # 飞书卡片"查看详细测试报告"按钮指向的 GitHub Pages 报告地址
-          # ⚠️ Pages URL 强制小写：仓库名大写会导致飞书卡片链接 404
-          ALLURE_REPORT_URL: https://zhaoguoy.github.io/test_ai-agent_project02/
+          # ⚠️ Pages 站点 URL 保留仓库名原始大小写：小写地址会 404
+          ALLURE_REPORT_URL: https://zhaoguoy.github.io/Test_ai-agent_project02/
 
       # 9. 生成 Allure 静态报告（合并全量结果与自愈重跑结果）
       - name: Generate Allure report
@@ -127,7 +127,7 @@ jobs:
           git add -A
           git commit -m "Deploy Allure report (run ${{ github.run_id }})"
           git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages:gh-pages
-          echo "✅ 报告已部署: https://zhaoguoy.github.io/test_ai-agent_project02/"
+          echo "✅ 报告已部署: https://zhaoguoy.github.io/Test_ai-agent_project02/"
 
       # 12. 输出执行结果（便于在 Actions 日志中查看）
       - name: Print execution status
