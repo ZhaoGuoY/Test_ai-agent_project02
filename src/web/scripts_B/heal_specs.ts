@@ -272,7 +272,7 @@ async function main() {
     // 交互阻塞/前置状态类失败（按钮可见但点不动、抽屉未弹出等）：根因是浮窗遮挡或页面状态，
     // 不是定位器失效。若继续走定位器替换逻辑，会把块内首个 expect(...).toBeVisible 断言
     //（往往是前置检查）污染为页面随机文本，导致后续重跑永远失败。此类失败直接跳过改写
-    const isInteractionBlocked = /点击均失败|点击失败|被遮挡|前置条件/.test(errorMessage);
+    const isInteractionBlocked = /点击均失败|点击失败|被遮挡|前置条件|抽屉|加购|结算/.test(errorMessage);
     if (isInteractionBlocked) {
       console.error(`[heal_specs] 失败类型为交互阻塞/前置状态问题（非定位器失效），不改写 spec，避免污染断言`);
       process.exit(1);
@@ -316,21 +316,22 @@ async function main() {
         process.exit(1);
       }
 
+      // 完整的 expect 语句匹配：含可选的尾随 .catch(() => {}) 链。
+      // 若正则只吃到 toBeVisible(...); 为止，原行尾的 .catch(() => {}); 会被残留下来，
+      // 与替换结果拼接出 "...);.catch(() => {});" 这类非法语法（曾导致 eu_carvera.spec.ts SyntaxError）
+      const EXPECT_LINE_RE = /await expect\(.*?\)\.toBeVisible\(\{ timeout: \d+ \}\);(?:\s*\.catch\(\(\) => \{\}\);)?/;
       const hasScroll = /await\s+\w+\.scrollIntoViewIfNeeded\(/.test(testBlock);
       if (hasScroll) {
         newBlock = newBlock.replace(
-          /await\s+\w+\.scrollIntoViewIfNeeded\([^)]*\);?/,
+          /await\s+\w+\.scrollIntoViewIfNeeded\([^)]*\)(?:\s*\.catch\(\(\) => \{\}\))?;?/,
           newLine
         );
         newBlock = newBlock.replace(
-          /\s*await expect\(.*?\)\.toBeVisible\(\{ timeout: \d+ \}\);?/,
+          new RegExp(`\\s*${EXPECT_LINE_RE.source}`),
           ''
         );
       } else {
-        newBlock = testBlock.replace(
-          /await expect\(.*?\)\.toBeVisible\(\{ timeout: \d+ \}\);/,
-          newLine
-        );
+        newBlock = testBlock.replace(EXPECT_LINE_RE, newLine);
       }
 
       if (newBlock === testBlock) {
@@ -343,8 +344,35 @@ async function main() {
 
     // 5. 写回文件
     content = content.replace(testBlock, newBlock);
+
+    // 6. 写回前语法校验：用 tsc --noEmit 检查修改后的文件，防止正则替换产出非法语法
+    //（无论校验成功与否，此步骤都会在写盘前执行；校验失败则放弃写回，保留原文件）
+    const candidatePath = specFilePath + '.heal-candidate.ts';
+    fs.writeFileSync(candidatePath, content, 'utf-8');
+    let syntaxOk = true;
+    try {
+      execSync(
+        `npx tsc --noEmit --skipLibCheck --target ES2020 --module commonjs ` +
+        `--moduleResolution node --esModuleInterop --resolveJsonModule --strict "${candidatePath}"`,
+        {
+          stdio: 'pipe',
+          timeout: 60000,
+          cwd: path.resolve(__dirname, '../../..'),
+        }
+      );
+    } catch (e) {
+      syntaxOk = false;
+      const stderr = (e as { stdout?: Buffer }).stdout?.toString() ?? '';
+      console.error(`[heal_specs] ❌ 修复后代码未通过语法校验，放弃写回（保留原文件）:\n${stderr.substring(0, 500)}`);
+    } finally {
+      fs.unlinkSync(candidatePath);
+    }
+    if (!syntaxOk) {
+      process.exit(1);
+    }
+
     fs.writeFileSync(specFilePath, content, 'utf-8');
-    console.log(`[heal_specs] ✅ 修复完成，已写回文件`);
+    console.log(`[heal_specs] ✅ 修复完成，已写回文件（语法校验通过）`);
 
   } catch (err) {
     console.error(`[heal_specs] 修复异常:`, err);

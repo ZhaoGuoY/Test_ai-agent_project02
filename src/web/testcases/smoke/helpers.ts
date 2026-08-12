@@ -4,6 +4,7 @@
  *
  * 职责：
  * - 关闭幸运转盘弹窗（优先点击 ×，失败则点击遮罩层或 Escape）
+ * - 关闭 "New to CNC?" 新手引导弹窗（US 站右下角，遮挡 Add to cart）
  * - 关闭 Google 翻译弹窗（精确选择器优先，失败则暴力移除）
  * - 移除第三方客服悬浮按钮（避免遮挡 Add to cart 等按钮导致点击错位）
  * - 通过商店切换器 UI 切换回目标站点（循环检测+重试）
@@ -36,6 +37,97 @@ async function dismissSpinPopup(page: Page): Promise<void> {
     }
   }
   console.log(`[helpers]   ℹ️ 未发现幸运转盘`);
+}
+
+/**
+ * 关闭 "Hi? New to CNC?" 新手引导弹窗（US 站右下角悬浮引导卡片）
+ *
+ * 该弹窗固定定位在页面右下角，会遮挡 Add to cart 等关键按钮导致点击失败。
+ * 关键事实：该弹窗由第三方客服插件渲染在 iframe 内（跨域），主文档
+ * innerText 中不存在 "New to CNC" 文本，因此文本特征只能作为辅助判据，
+ * 真正可靠的策略是几何特征：右下角大面积 fixed/absolute 浮层（弹窗卡片
+ * 宽约 300-400px、高约 200-300px，明显大于客服气泡的 ≤120px）。
+ * 处理顺序：
+ * 1. 主文档文本特征检测（弹窗若直接渲染在主文档时优先点关闭按钮）
+ * 2. JS 兜底：移除右下角大面积 fixed/absolute 元素及其容器（含 iframe）
+ *
+ * 该弹窗仅在 US 站（www.makera.com）出现，但封装在共享 helpers 中，
+ * 其他站点不存在时安全跳过（右下角无大面积浮层即无操作，无副作用）。
+ */
+export async function dismissGuidePopup(page: Page): Promise<void> {
+  console.log(`[helpers]   🔄 检查新手引导弹窗(New to CNC)...`);
+
+  // 第一步：主文档文本特征检测（弹窗渲染在主文档时走安全关闭）
+  const marker = page.locator('text=/New to CNC|CNC Basics 101/i').first();
+  if (await marker.isVisible({ timeout: 500 }).catch(() => false)) {
+    // 在弹窗容器内找关闭按钮点击（aria-label/class/title 含 close 的 button）
+    const closeBtn = page.locator('div, section, aside').filter({ hasText: /New to CNC/i }).locator('button[aria-label*="close" i], button[class*="close" i], button[title*="close" i]').first();
+    if (await closeBtn.isVisible({ timeout: 500 }).catch(() => false)) {
+      await closeBtn.click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      if (!(await marker.isVisible({ timeout: 300 }).catch(() => false))) {
+        console.log(`[helpers]   ✅ 已关闭新手引导弹窗（点击关闭按钮）`);
+        return;
+      }
+    }
+    // 主文档内暴力移除：包含特征文本的最小固定/绝对定位容器整体删除
+    await page.evaluate(() => {
+      const candidates = Array.from(document.querySelectorAll('div, section, aside, iframe'));
+      for (const el of candidates.reverse()) {
+        const text = (el as HTMLElement).innerText ?? '';
+        if (!/New to CNC|CNC Basics 101/i.test(text)) continue;
+        const style = window.getComputedStyle(el as HTMLElement);
+        if (style.position !== 'fixed' && style.position !== 'absolute') continue;
+        (el as HTMLElement).remove();
+        break;
+      }
+    }).catch(() => {});
+    console.log(`[helpers]   ✅ 已暴力移除新手引导弹窗（主文档文本匹配）`);
+    await page.waitForTimeout(200);
+    return;
+  }
+
+  // 第二步：iframe 弹窗兜底——弹窗在跨域 iframe 内时主文档检测不到文本，
+  // 改用几何特征：贴近视口右下角、尺寸足够大的 fixed/absolute 元素即引导卡片。
+  // 注意：客服插件会在移除后重新注入弹窗，因此同时安装 MutationObserver 守卫，
+  // 在页面生命周期内持续清除重新出现的右下角浮层（排除购物车抽屉等 dialog）。
+  const removed = await page.evaluate(() => {
+    const w = window as unknown as { __guidePopupGuard?: boolean };
+    const isGuideLayer = (el: HTMLElement): boolean => {
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      if (style.position !== 'fixed' && style.position !== 'absolute') return false;
+      // 购物车抽屉/模态框是右侧大面积浮层，绝不能误删
+      if (el.closest('[role="dialog"], .cart-drawer, [class*="cart-drawer" i]')) return false;
+      const rect = el.getBoundingClientRect();
+      // 右下角贴边（右边/底边距视口 ≤100px）且宽高均 >120px 的浮层视为引导卡片（含其 iframe）
+      const nearRight = rect.right >= window.innerWidth - 100;
+      const nearBottom = rect.bottom >= window.innerHeight - 100;
+      return nearRight && nearBottom && rect.width > 120 && rect.height > 120;
+    };
+    const sweep = (): number => {
+      let n = 0;
+      const candidates = Array.from(document.querySelectorAll('div, section, aside, iframe'));
+      for (const el of candidates.reverse()) {
+        const htmlEl = el as HTMLElement;
+        if (!htmlEl.isConnected) continue;
+        if (isGuideLayer(htmlEl)) { htmlEl.remove(); n++; }
+      }
+      return n;
+    };
+    // 安装守卫：客服插件重新注入弹窗时自动清除（去重，仅安装一次）
+    if (!w.__guidePopupGuard) {
+      w.__guidePopupGuard = true;
+      new MutationObserver(() => sweep()).observe(document.body, { childList: true, subtree: true });
+    }
+    return sweep();
+  }).catch(() => 0);
+  if (removed > 0) {
+    console.log(`[helpers]   ✅ 已移除右下角引导弹窗浮层（iframe/几何特征，共 ${removed} 个）`);
+    await page.waitForTimeout(200);
+  } else {
+    console.log(`[helpers]   ℹ️ 未发现新手引导弹窗`);
+  }
 }
 
 /**
@@ -164,7 +256,7 @@ export async function dismissNavDropdown(page: Page): Promise<void> {
 }
 
 /**
- * 关闭所有已知弹窗（幸运转盘 + Google 翻译 + 客服悬浮按钮 + 导航 hover 下拉）
+ * 关闭所有已知弹窗（幸运转盘 + 新手引导 + Google 翻译 + 客服悬浮按钮 + 导航 hover 下拉）
  *
  * 导出供 spec 文件在点击关键按钮的每轮重试前循环调用，
  * 应对延迟弹出的浮窗遮挡导致的点击失败。
@@ -172,6 +264,7 @@ export async function dismissNavDropdown(page: Page): Promise<void> {
 export async function dismissAllPopups(page: Page): Promise<void> {
   console.log(`[helpers]  🧹 开始关闭所有弹窗...`);
   await dismissSpinPopup(page);
+  await dismissGuidePopup(page);
   await dismissGoogleTranslate(page);
   await dismissChatWidget(page);
   await dismissNavDropdown(page);
@@ -322,25 +415,54 @@ async function switchToTargetStore(page: Page, targetUrl: string): Promise<boole
 
     if (storeOption) {
       console.log(`[helpers] ✅ 点击商店选项 "${targetStoreOption}" 切换...`);
-    
-      // 最多重试 3 次点击，直到 URL 发生变化
+
       let navigationSuccess = false;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        console.log(`[helpers]     🔄 第${attempt}次点击商店选项...`);
-        await storeOption.click({ force: true, timeout: 5000 }); // 显式超时防阻塞
-        await page.waitForTimeout(500);
-        // 点击后立即关闭可能重新出现的幸运转盘
-        await dismissSpinPopup(page);
-    
-        // 检查 URL 是否已变化
-        const afterClickUrl = page.url();
-        const afterClickHost = new URL(afterClickUrl).hostname;
-        if (afterClickHost === targetHost) {
-          console.log(`[helpers] ✅ 商店切换成功，URL: ${afterClickUrl}`);
-          navigationSuccess = true;
-          break;
+
+      // 优先策略：navLink 自带 data-destination 目标 URL，且该元素默认隐藏、
+      // 仅在 hover 时渲染（曾导致 locator.click: Element is not visible，
+      // Playwright 在点击瞬间仍会校验可见性，force 也无法绕过），
+      // 因此直接读取目标 URL 导航，最可靠地绕开点击可见性问题
+      const destination = await storeOption.getAttribute('data-destination').catch(() => null);
+      if (destination && new URL(destination).hostname === targetHost) {
+        console.log(`[helpers]     🔗 读取到 data-destination，直接导航: ${destination}`);
+        try {
+          await page.goto(destination, { waitUntil: 'domcontentloaded', timeout: 60000 });
+          const afterGotoHost = new URL(page.url()).hostname;
+          if (afterGotoHost === targetHost) {
+            console.log(`[helpers] ✅ 商店切换成功（直接导航），URL: ${page.url()}`);
+            navigationSuccess = true;
+          } else {
+            console.warn(`[helpers]     ⚠️ 直接导航后 host 不符: ${afterGotoHost}`);
+          }
+        } catch (gotoErr) {
+          console.warn(`[helpers]     ⚠️ 直接导航失败，回退点击方式: ${gotoErr}`);
         }
-        console.log(`[helpers]     ⚠️ 第${attempt}次点击后 URL 未变化: ${afterClickHost}，重试...`);
+      }
+
+      // 回退策略：JS 派发 click（不受可见性限制）+ 常规点击重试，最多 3 次
+      if (!navigationSuccess) {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          console.log(`[helpers]     🔄 第${attempt}次点击商店选项...`);
+          if (attempt % 2 === 1) {
+            // JS click：元素已定位但隐藏/被遮挡时依然可触发其点击事件
+            await storeOption.evaluate((el) => (el as HTMLElement).click()).catch(() => {});
+          } else {
+            await storeOption.click({ timeout: 5000 }).catch(() => {});
+          }
+          await page.waitForTimeout(500);
+          // 点击后立即关闭可能重新出现的幸运转盘
+          await dismissSpinPopup(page);
+
+          // 检查 URL 是否已变化
+          const afterClickUrl = page.url();
+          const afterClickHost = new URL(afterClickUrl).hostname;
+          if (afterClickHost === targetHost) {
+            console.log(`[helpers] ✅ 商店切换成功，URL: ${afterClickUrl}`);
+            navigationSuccess = true;
+            break;
+          }
+          console.log(`[helpers]     ⚠️ 第${attempt}次点击后 URL 未变化: ${afterClickHost}，重试...`);
+        }
       }
     
       if (navigationSuccess) return true;
@@ -407,36 +529,53 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
     }
   } else {
     // 4. 检测到跳转，执行商店切换
-    await page.waitForTimeout(3000); // 等待切换按钮出现
-    const switched = await switchToTargetStore(page, url);
-    if (!switched) {
-      console.error(`[helpers] ❌ 商店切换失败`);
-      return false;
-    }
-  console.log(`[helpers]   ⏳ 等待 3s 让商店切换完成...`);
-    await page.waitForTimeout(3000);
-    console.log(`[helpers]   🔄 重新导航到目标页面: ${url}`);
-    try {
-      console.log(`[helpers]     ⏳ 导航中（超时 60s）...`);
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-      console.log(`[helpers]     ✅ 导航成功`);
-    } catch (err) {
-      // 超时后验证是否已回到目标站点
-      const currentHost = new URL(page.url()).hostname;
-      if (currentHost === targetHost) {
-        console.log(`[helpers]     ⚠️ 导航超时但 host 正确，继续: ${page.url()}`);
-      } else {
-        console.log(`[helpers]     ❌ 导航超时且 host 不匹配: ${page.url()}，终止`);
-        return false;
+    //    IP 地域跳转是服务端行为：单次切换成功后 goto 目标 URL 可能再次被弹回
+    //    （如欧洲 IP 访问 www.makera.com 被 302 回 eu.makera.com），
+    //    因此"切换+重新导航"整体最多重试 2 轮，第二轮时切换写入的地域偏好
+    //    cookie 已生效，goto 通常不会再被弹回
+    for (let round = 1; round <= 2; round++) {
+      await page.waitForTimeout(3000); // 等待切换按钮出现
+      const switched = await switchToTargetStore(page, url);
+      if (!switched) {
+        console.error(`[helpers] ❌ 商店切换失败（第${round}轮）`);
+        if (round === 2) return false;
+        continue;
       }
-    }
-    console.log(`[helpers]   ✅ 导航完成: ${page.url()}`);
-    // 关闭弹窗（无论成功与否都继续测试）
-    try {
-      console.log(`[helpers]   🧹 关闭弹窗...`);
-      await dismissAllPopups(page);
-    } catch (err) {
-      console.log(`[helpers]   ⚠️ 关闭弹窗失败，继续: ${err}`);
+      console.log(`[helpers]   ⏳ 等待 3s 让商店切换完成...`);
+      await page.waitForTimeout(3000);
+      console.log(`[helpers]   🔄 重新导航到目标页面（第${round}轮）: ${url}`);
+      try {
+        console.log(`[helpers]     ⏳ 导航中（超时 60s）...`);
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        console.log(`[helpers]     ✅ 导航成功`);
+      } catch (err) {
+        // 超时后验证是否已回到目标站点
+        const currentHost = new URL(page.url()).hostname;
+        if (currentHost === targetHost) {
+          console.log(`[helpers]     ⚠️ 导航超时但 host 正确，继续: ${page.url()}`);
+        } else if (round === 2) {
+          console.log(`[helpers]     ❌ 导航超时且 host 不匹配: ${page.url()}，终止`);
+          return false;
+        } else {
+          console.warn(`[helpers]     ⚠️ 导航超时且 host 不匹配，进入下一轮切换重试`);
+          continue;
+        }
+      }
+      // 导航后若再次被 IP 跳转弹回（host 不符），进入下一轮重新切换
+      const afterNavHost = new URL(page.url()).hostname;
+      if (afterNavHost !== targetHost) {
+        console.warn(`[helpers]     ⚠️ 重新导航后再次被 IP 跳转: ${afterNavHost}，进入第${round + 1}轮商店切换重试`);
+        continue;
+      }
+      console.log(`[helpers]   ✅ 导航完成: ${page.url()}`);
+      // 关闭弹窗（无论成功与否都继续测试）
+      try {
+        console.log(`[helpers]   🧹 关闭弹窗...`);
+        await dismissAllPopups(page);
+      } catch (err) {
+        console.log(`[helpers]   ⚠️ 关闭弹窗失败，继续: ${err}`);
+      }
+      break;
     }
   }
 
@@ -449,7 +588,22 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
     console.log(`[helpers] ✅✅✅ 页面初始化成功: ${finalUrl}`);
     return true;
   }
-  console.log(`[helpers] ❌❌ 页面初始化失败: ${finalUrl}，目标 host: ${targetHost}`);
+
+  // 7. 最终验证失败兜底：再走一轮商店切换 + 导航（此时切换 cookie 已存在，成功率高）
+  console.warn(`[helpers] ⚠️ 最终验证失败，执行兜底重试（商店切换 + 重新导航）`);
+  const retried = await switchToTargetStore(page, url);
+  if (retried) {
+    await page.waitForTimeout(3000);
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+    const retryHost = new URL(page.url()).hostname;
+    if (retryHost === targetHost) {
+      console.log(`[helpers]   🧹 关闭弹窗...`);
+      await dismissAllPopups(page).catch(() => {});
+      console.log(`[helpers] ✅✅✅ 页面初始化成功（兜底重试）: ${page.url()}`);
+      return true;
+    }
+  }
+  console.log(`[helpers] ❌❌ 页面初始化失败: ${page.url()}，目标 host: ${targetHost}`);
   return false;
 }
 

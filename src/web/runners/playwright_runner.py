@@ -47,18 +47,28 @@ class PlaywrightRunner:
             cmd.append(test_dir)
 
         # Allure 结果目录注入：全量跑与自愈重跑分开存放
+        # 历史故障根因（已修复）：playwright.config.ts 曾使用 allure-playwright v2 的
+        # 选项名 outputFolder，v3 中已更名为 resultsDir，旧名被静默忽略，
+        # 导致结果全部落入默认目录 ./allure-results（项目根目录），
+        # workspace 下目录为空 → Allure 报告无内容。环境变量传递本身无问题。
         env = os.environ.copy()
         full_results_dir = self.project_root / "workspace" / "allure-results"
         heal_results_dir = self.project_root / "workspace" / "allure-heal-results"
         if spec_file:
-            env["ALLURE_RESULTS"] = str(heal_results_dir)
+            env["ALLURE_RESULTS"] = "workspace/allure-heal-results"
         else:
-            env["ALLURE_RESULTS"] = str(full_results_dir)
+            env["ALLURE_RESULTS"] = "workspace/allure-results"
             # 全量跑前清空两个结果目录（无论是否有残留文件都会执行），
             # 确保本轮报告不含上一轮监控的旧数据
             for d in (full_results_dir, heal_results_dir):
                 if d.exists():
                     shutil.rmtree(str(d), ignore_errors=True)
+            # 清理历史遗留的根目录 allure-results/（早期 outputFolder 选项名 bug 误写的产物），
+            # 防止与正确目录混淆；无论是否存在都安全执行，失败不阻断
+            legacy_dir = self.project_root / "allure-results"
+            if legacy_dir.exists():
+                shutil.rmtree(str(legacy_dir), ignore_errors=True)
+                logger.warning("[Allure] 已清理根目录遗留的 allure-results/（历史选项名 bug 产物）")
 
         logger.info(f"执行命令: {' '.join(cmd)}")
         logger.info(f"工作目录: {self.project_root}")

@@ -50,8 +50,11 @@ export default defineConfig({
     ['list'],
     ['junit', { outputFile: 'workspace/test-results/junit.xml' }],
     ['html', { outputFolder: 'workspace/test-results/html', open: 'never' }],
+    // ⚠️ 选项名必须是 resultsDir（allure-playwright v3 起更名）：
+    // 旧名 outputFolder 在 v3 中会被静默忽略，导致结果落入默认目录 ./allure-results（项目根目录），
+    // workspace 下的结果目录为空 → Allure 报告无内容（曾因此导致 CI 报告 0 用例）
     ['allure-playwright', {
-      outputFolder: process.env.ALLURE_RESULTS || 'workspace/allure-results',
+      resultsDir: process.env.ALLURE_RESULTS || 'workspace/allure-results',
       detail: true,
       suiteTitle: true,
     }],

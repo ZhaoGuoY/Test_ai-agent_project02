@@ -23,11 +23,11 @@ env:
   FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
   DEEPSEEK_API_KEY: ${{ secrets.LLM_API_KEY }}
 
-# GitHub Pages 部署权限（Allure 报告托管）
+# gh-pages 分支部署权限（Allure 报告托管）
+# 说明：原 actions/deploy-pages 工作流部署方式出现服务侧异常（pages/builds 始终为空、站点 404），
+# 改为直接向 gh-pages 分支推送报告，需要 contents: write
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 jobs:
   monitor:
@@ -36,11 +36,6 @@ jobs:
 
     # 超时时间：整个 job 最长 30 分钟
     timeout-minutes: 30
-
-    # GitHub Pages 部署环境（Allure 报告发布）
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       # 1. 检出代码
@@ -89,7 +84,8 @@ jobs:
         continue-on-error: true
         env:
           # 飞书卡片"查看详细测试报告"按钮指向的 GitHub Pages 报告地址
-          ALLURE_REPORT_URL: https://zhaoguoy.github.io/Test_ai-agent_project02/
+          # ⚠️ Pages URL 强制小写：仓库名大写会导致飞书卡片链接 404
+          ALLURE_REPORT_URL: https://zhaoguoy.github.io/test_ai-agent_project02/
 
       # 9. 生成 Allure 静态报告（合并全量结果与自愈重跑结果）
       - name: Generate Allure report
@@ -112,21 +108,26 @@ jobs:
             workspace/allure-report/
           retention-days: 7   # 保留 7 天
 
-      # 11. 部署 Allure 报告到 GitHub Pages（供飞书卡片按钮跳转查看）
-      - name: Setup Pages
+      # 11. 部署 Allure 报告到 gh-pages 分支（供飞书卡片按钮跳转查看）
+      #     原 Setup Pages / Upload Pages artifact / deploy-pages 三件套因 GitHub Pages
+      #     服务侧构建管道异常（builds 始终为空）已废弃，改为直接推送 gh-pages 分支
+      - name: Deploy Allure report to gh-pages
         if: always()
-        uses: actions/configure-pages@v5
-
-      - name: Upload Pages artifact
-        if: always()
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: workspace/allure-report
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        if: always()
-        uses: actions/deploy-pages@v4
+        run: |
+          set -e
+          REPORT_DIR=workspace/allure-report
+          if [ ! -f "$REPORT_DIR/index.html" ]; then
+            echo "⚠️ Allure 报告中缺少 index.html，跳过部署"
+            exit 0
+          fi
+          cd "$REPORT_DIR"
+          git init -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Deploy Allure report (run ${{ github.run_id }})"
+          git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages:gh-pages
+          echo "✅ 报告已部署: https://zhaoguoy.github.io/test_ai-agent_project02/"
 
       # 12. 输出执行结果（便于在 Actions 日志中查看）
       - name: Print execution status

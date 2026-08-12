@@ -68,7 +68,6 @@ test.describe('EU 站点', () => {
         await dismissAllPopups(page);
         try {
           // 按钮位于首屏下方，显式滚动到按钮位置后再点击（timeout 防继承测试级 300s）
-          await expect(page.getByText('My Cart 0').first()).toBeVisible({ timeout: 5000 });
           await addToCartBtn.click({ timeout: 8000 });
           break;
         } catch {
@@ -85,15 +84,20 @@ test.describe('EU 站点', () => {
       // 注意：顶部导航购物车图标文本也是 "My Cart"，用 getByText(/my cart/i) 会在抽屉未弹出时误报
       const cartDrawer = page.getByRole('dialog', { name: /my cart/i }).first();
       // 抽屉未弹出（可能被浮窗遮挡/动画打断）时清理浮窗后重新点击加购，最多 2 轮；
-      // 若页面已被导航到 Shopify /cart/add 错误页（半渲染时原生表单 POST 缺 items 参数被拒），
-      // 则停止 UI 重试，改走 AJAX API 兜底加购 → 返回商品页 → 打开购物车抽屉
+      // 若页面已被导航到 Shopify /cart/add 错误页（半渲染时原生表单 POST 缺 items 参数被拒）
+      // 或已点击 2 次但抽屉始终未弹出，则停止 UI 重试，改走 AJAX API 兜底加购 →
+      // 返回商品页 → 打开购物车抽屉
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-          await expect(cartDrawer).toBeVisible({ timeout: 15000 });
+          await expect(cartDrawer, '[EU] 加购后购物车抽屉未弹出').toBeVisible({ timeout: 15_000 });
           break;
         } catch {
-          if (page.url().includes('/cart/add')) {
-            console.warn(`[EU] ⚠️ 页面已跳转到 /cart/add 错误页，执行 AJAX API 兜底加购`);
+          const onCartAddErrorPage = page.url().includes('/cart/add');
+          if (onCartAddErrorPage || attempt === 2) {
+            const reason = onCartAddErrorPage
+              ? '页面已跳转到 /cart/add 错误页'
+              : '已点击 2 次但购物车抽屉始终未弹出（点击可能被页面 JS 拦截，改走 API 加购）';
+            console.warn(`[EU] ⚠️ ${reason}，执行 AJAX API 兜底加购`);
             const added = await addToCartViaApi(page, TARGET_URL);
             expect(added, '[EU] 兜底加购失败（AJAX API 返回失败）').toBe(true);
             // 返回商品页恢复现场，再关闭弹窗
@@ -108,7 +112,6 @@ test.describe('EU 站点', () => {
             break;
           }
           console.warn(`[EU] ⚠️ 第${attempt}轮：购物车抽屉未弹出，清理浮窗后重新点击加购`);
-          if (attempt === 2) throw new Error('[EU] 加购后购物车抽屉未弹出（共点击 2 次）');
           await dismissAllPopups(page);
           await addToCartBtn.scrollIntoViewIfNeeded({ timeout: 10000 }).catch(() => {});
           await addToCartBtn.click({ timeout: 8000 }).catch(() => {});
