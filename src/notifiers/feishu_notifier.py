@@ -114,7 +114,7 @@ class FeishuNotifier:
         logger.info(f"测试统计: {stats}")
         return stats
 
-    def send_card(self, stats: Dict[str, Any], title: str = "调试报告", heal_info: str = "") -> bool:
+    def send_card(self, stats: Dict[str, Any], title: str = "独立站监控测试报告", heal_info: str = "") -> bool:
         """
         发送飞书卡片消息
 

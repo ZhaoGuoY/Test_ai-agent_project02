@@ -1,39 +1,71 @@
 # ====================== 1. 依赖目录 ======================
-node_modules/       # Node.js 依赖（npm/yarn/pnpm 安装的包）
-.venv/              # Python 虚拟环境
-__pycache__/        # Python 字节码缓存（.pyc 文件）
-*.py[cod]           # Python 编译后的文件（.pyc/.pyo/.pyd）
+# Node.js 依赖（npm/yarn/pnpm 安装的包）
+node_modules/
+# Python 虚拟环境
+.venv/
+# Python 字节码缓存（.pyc 文件）
+__pycache__/
+# Python 编译后的文件（.pyc/.pyo/.pyd）
+*.py[cod]
 
 # ====================== 2. 测试产物 ======================
-test-results/              # Playwright 默认失败产物目录（保险条目，正常已收敛到 workspace 下）
-workspace/test-results/  # Playwright 测试结果（如 JSON/XML 报告）
-workspace/logs/         # 日志文件（如 monitor.log）
-workspace/allure-results/      # Allure 原始结果数据（全量跑）
-workspace/allure-heal-results/ # Allure 原始结果数据（自愈重跑）
-workspace/allure-report/       # Allure 生成的静态报告
-workspace/*.py          # Agent 生成的临时脚本（如 check_*.py、run_*.py）
-playwright-report/      # Playwright HTML 报告
-check_*.py             # Agent 生成的临时检查脚本
-run_*.py               # Agent 生成的临时运行脚本
-final_*.py             # Agent 生成的临时最终脚本
-conversation_history/   # LangGraph 对话历史（checkpoint 持久化）
-.langgraph_api/         # LangGraph 内部状态
+# Playwright 默认失败产物目录（保险条目，正常已收敛到 workspace 下）
+test-results/
+# Playwright 测试结果（如 JSON/XML 报告）
+workspace/test-results/
+# 日志文件（如 monitor.log）
+workspace/logs/
+# Allure 原始结果数据（全量跑）
+workspace/allure-results/
+# Allure 原始结果数据（自愈重跑）
+workspace/allure-heal-results/
+# Allure 生成的静态报告
+workspace/allure-report/
+# Agent 生成的临时脚本（如 check_*.py、run_*.py）
+workspace/*.py
+workspace/*.log
+workspace/*.initial
+workspace/*.snapshot
+workspace/artifact_dl/
+# Playwright HTML 报告
+playwright-report/
+# Agent 生成的临时检查脚本
+check_*.py
+# Agent 生成的临时运行脚本
+run_*.py
+# Agent 生成的临时最终脚本
+final_*.py
+# LangGraph 对话历史（checkpoint 持久化）
+conversation_history/
+# LangGraph 内部状态
+.langgraph_api/
 
 # ====================== 3. 环境变量 / 密钥 ======================
-.env                # 环境变量文件（含敏感信息，如 API Key）
-*.local             # 本地配置文件（如 .env.local）
+# 环境变量文件（含敏感信息，如 API Key）
+.env
+# 本地配置文件（如 .env.local）
+*.local
 
 # ====================== 4. IDE 配置 ======================
-.idea/              # PyCharm 项目配置
-.vscode/            # VS Code 配置（settings.json、launch.json 等）
+# PyCharm 项目配置
+.idea/
+# VS Code 项目配置
+.vscode/
 
 # ====================== 5. 打包输出（可选） ======================
-dist/               # 前端打包产物（如 React/Vue 项目）
-build/              # Python 打包产物（如 `python setup.py sdist` 生成的文件）
-*.exe               # 可执行文件（如 PyInstaller 打包的程序）
-*.dll               # 动态链接库（Windows）
-*.so                # 动态链接库（Linux/macOS）
+# 前端打包产物（如 React/Vue 项目）
+dist/
+# Python 打包产物（如 `python setup.py sdist` 生成的文件）
+build/
+# 可执行文件（如 PyInstaller 打包的程序）
+*.exe
+# Windows 动态链接库
+*.dll
+# Linux/macOS 动态链接库
+*.so
 
 # ====================== 6. 系统文件 ======================
-.DS_Store           # macOS 系统文件
-Thumbs.db           # Windows 缩略图缓存
+# macOS 系统文件
+.DS_Store
+# Windows 缩略图缓存
+Thumbs.db

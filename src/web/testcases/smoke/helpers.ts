@@ -43,91 +43,93 @@ async function dismissSpinPopup(page: Page): Promise<void> {
  * 关闭 "Hi? New to CNC?" 新手引导弹窗（US 站右下角悬浮引导卡片）
  *
  * 该弹窗固定定位在页面右下角，会遮挡 Add to cart 等关键按钮导致点击失败。
- * 关键事实：该弹窗由第三方客服插件渲染在 iframe 内（跨域），主文档
- * innerText 中不存在 "New to CNC" 文本，因此文本特征只能作为辅助判据，
- * 真正可靠的策略是几何特征：右下角大面积 fixed/absolute 浮层（弹窗卡片
- * 宽约 300-400px、高约 200-300px，明显大于客服气泡的 ≤120px）。
- * 处理顺序：
- * 1. 主文档文本特征检测（弹窗若直接渲染在主文档时优先点关闭按钮）
- * 2. JS 兜底：移除右下角大面积 fixed/absolute 元素及其容器（含 iframe）
  *
- * 该弹窗仅在 US 站（www.makera.com）出现，但封装在共享 helpers 中，
- * 其他站点不存在时安全跳过（右下角无大面积浮层即无操作，无副作用）。
+ * 关闭方式（简单直接）：弹窗右上角的关闭 X 就是一个 <button> 元素，
+ * 特征为 aria-label="Close"。直接定位这个 button 并点击即可关闭，
+ * 限定在弹窗容器（data-silex-id / paged-element 特征）内查找，
+ * 避免误点页面上其他的 Close 按钮。
+ *
+ * 弹窗由站点脚本延迟注入且可能反复重新弹出，因此点击关键按钮前
+ * 由 dismissGuidePopupLoop 循环调用本函数；找不到关闭按钮时
+ * 兜底移除弹窗容器（仅删含特征文本的 Silex 容器，不做几何暴力删除）。
+ *
+ * 该弹窗目前仅在 US 站（www.makera.com）出现，EU/Global 未来也可能启用，
+ * 因此封装在共享 helpers 中由 dismissAllPopups 统一调用；
+ * 其他站点不存在时安全跳过（无匹配元素即无操作，无副作用）。
  */
 export async function dismissGuidePopup(page: Page): Promise<void> {
   console.log(`[helpers]   🔄 检查新手引导弹窗(New to CNC)...`);
 
-  // 第一步：主文档文本特征检测（弹窗渲染在主文档时走安全关闭）
+  // 定位弹窗关闭按钮：元素类型就是 button，aria-label="Close"；
+  // 优先限定在弹窗容器特征内查找，找不到再放宽到全页面
+  const closeSelectors = [
+    '[data-silex-id] button[aria-label="Close" i]',
+    '[class*="paged-element"] button[aria-label="Close" i]',
+    'section[class*="page-page-"] button[aria-label="Close" i]',
+  ];
+  for (const selector of closeSelectors) {
+    const btn = page.locator(selector).first();
+    if (await btn.isVisible({ timeout: 500 }).catch(() => false)) {
+      await btn.click({ timeout: 5000 }).catch(() => {});
+      console.log(`[helpers]   ✅ 已关闭新手引导弹窗（点击关闭按钮 ${selector}）`);
+      await page.waitForTimeout(300);
+      return;
+    }
+  }
+
+  // 兜底：关闭按钮未找到但弹窗本体可见时，移除含特征文本的弹窗容器
   const marker = page.locator('text=/New to CNC|CNC Basics 101/i').first();
   if (await marker.isVisible({ timeout: 500 }).catch(() => false)) {
-    // 在弹窗容器内找关闭按钮点击（aria-label/class/title 含 close 的 button）
-    const closeBtn = page.locator('div, section, aside').filter({ hasText: /New to CNC/i }).locator('button[aria-label*="close" i], button[class*="close" i], button[title*="close" i]').first();
-    if (await closeBtn.isVisible({ timeout: 500 }).catch(() => false)) {
-      await closeBtn.click({ timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(300);
-      if (!(await marker.isVisible({ timeout: 300 }).catch(() => false))) {
-        console.log(`[helpers]   ✅ 已关闭新手引导弹窗（点击关闭按钮）`);
-        return;
-      }
-    }
-    // 主文档内暴力移除：包含特征文本的最小固定/绝对定位容器整体删除
     await page.evaluate(() => {
-      const candidates = Array.from(document.querySelectorAll('div, section, aside, iframe'));
-      for (const el of candidates.reverse()) {
-        const text = (el as HTMLElement).innerText ?? '';
-        if (!/New to CNC|CNC Basics 101/i.test(text)) continue;
-        const style = window.getComputedStyle(el as HTMLElement);
-        if (style.position !== 'fixed' && style.position !== 'absolute') continue;
-        (el as HTMLElement).remove();
+      for (const child of Array.from(document.body.children).reverse()) {
+        const el = child as HTMLElement;
+        if (!/New to CNC|CNC Basics 101/i.test(el.innerText ?? '')) continue;
+        const hasSilexMark =
+          el.matches('[data-silex-id], [class*="paged-element"], section[class*="page-page-"]') ||
+          el.querySelector('[data-silex-id], [class*="paged-element"]') !== null;
+        if (!hasSilexMark) continue;
+        el.remove();
         break;
       }
     }).catch(() => {});
-    console.log(`[helpers]   ✅ 已暴力移除新手引导弹窗（主文档文本匹配）`);
+    console.log(`[helpers]   ✅ 已移除新手引导弹窗容器（关闭按钮未找到，兜底移除）`);
     await page.waitForTimeout(200);
     return;
   }
 
-  // 第二步：iframe 弹窗兜底——弹窗在跨域 iframe 内时主文档检测不到文本，
-  // 改用几何特征：贴近视口右下角、尺寸足够大的 fixed/absolute 元素即引导卡片。
-  // 注意：客服插件会在移除后重新注入弹窗，因此同时安装 MutationObserver 守卫，
-  // 在页面生命周期内持续清除重新出现的右下角浮层（排除购物车抽屉等 dialog）。
-  const removed = await page.evaluate(() => {
-    const w = window as unknown as { __guidePopupGuard?: boolean };
-    const isGuideLayer = (el: HTMLElement): boolean => {
-      const style = window.getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden') return false;
-      if (style.position !== 'fixed' && style.position !== 'absolute') return false;
-      // 购物车抽屉/模态框是右侧大面积浮层，绝不能误删
-      if (el.closest('[role="dialog"], .cart-drawer, [class*="cart-drawer" i]')) return false;
-      const rect = el.getBoundingClientRect();
-      // 右下角贴边（右边/底边距视口 ≤100px）且宽高均 >120px 的浮层视为引导卡片（含其 iframe）
-      const nearRight = rect.right >= window.innerWidth - 100;
-      const nearBottom = rect.bottom >= window.innerHeight - 100;
-      return nearRight && nearBottom && rect.width > 120 && rect.height > 120;
-    };
-    const sweep = (): number => {
-      let n = 0;
-      const candidates = Array.from(document.querySelectorAll('div, section, aside, iframe'));
-      for (const el of candidates.reverse()) {
-        const htmlEl = el as HTMLElement;
-        if (!htmlEl.isConnected) continue;
-        if (isGuideLayer(htmlEl)) { htmlEl.remove(); n++; }
-      }
-      return n;
-    };
-    // 安装守卫：客服插件重新注入弹窗时自动清除（去重，仅安装一次）
-    if (!w.__guidePopupGuard) {
-      w.__guidePopupGuard = true;
-      new MutationObserver(() => sweep()).observe(document.body, { childList: true, subtree: true });
+  console.log(`[helpers]   ℹ️ 未发现新手引导弹窗`);
+}
+
+/**
+ * 循环关闭 "New to CNC?" 新手引导弹窗，直到页面上确认彻底消失
+ *
+ * 背景：该弹窗由 Silex 脚本延迟注入且会反复重新显示，单次关闭不可靠；
+ * 因此在寻找 Add to cart 等关键按钮前用本函数循环清理——每轮执行一次
+ * dismissGuidePopup 后立即用文本标记检测弹窗是否仍可见，可见则等待后
+ * 再关一轮，最多 rounds 轮；找不到弹窗立即返回 true。
+ *
+ * @returns true = 弹窗已确认不存在/已关闭；false = rounds 轮后弹窗仍可见
+ *          （调用方可据此决定重新调用本函数再次循环关闭）
+ */
+export async function dismissGuidePopupLoop(page: Page, rounds = 5): Promise<boolean> {
+  // 弹窗可见性标记：特征文本定位（Silex/非 Silex 两种形态通用）
+  const marker = page.locator('text=/New to CNC|CNC Basics 101/i').first();
+  for (let round = 1; round <= rounds; round++) {
+    // 先检测：弹窗不存在则无需关闭，直接返回
+    const visible = await marker.isVisible({ timeout: 500 }).catch(() => false);
+    if (!visible) {
+      if (round === 1) console.log(`[helpers]   ℹ️ 新手引导弹窗不存在，无需循环关闭`);
+      else console.log(`[helpers]   ✅ 第${round - 1}轮关闭后确认弹窗已消失`);
+      return true;
     }
-    return sweep();
-  }).catch(() => 0);
-  if (removed > 0) {
-    console.log(`[helpers]   ✅ 已移除右下角引导弹窗浮层（iframe/几何特征，共 ${removed} 个）`);
-    await page.waitForTimeout(200);
-  } else {
-    console.log(`[helpers]   ℹ️ 未发现新手引导弹窗`);
+    console.log(`[helpers]   🔄 第${round}/${rounds}轮循环关闭新手引导弹窗...`);
+    await dismissGuidePopup(page);
+    // 关闭动作后留 500ms 给关闭动画/DOM 收尾，下一轮开头再确认
+    await page.waitForTimeout(500);
   }
+  const stillVisible = await marker.isVisible({ timeout: 500 }).catch(() => false);
+  if (stillVisible) console.warn(`[helpers]   ⚠️ ${rounds}轮循环关闭后新手引导弹窗仍可见`);
+  return !stillVisible;
 }
 
 /**

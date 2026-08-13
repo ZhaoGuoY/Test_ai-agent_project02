@@ -3,7 +3,7 @@
 // 供 Allure 详细报告展示（步骤树/参数/预期一目了然）
 import { test as base, expect, Page } from '@playwright/test';
 import { parameter } from 'allure-js-commons';
-import { setupPage, dismissAllPopups, addToCartViaApi } from './helpers';
+import { setupPage, dismissAllPopups, addToCartViaApi, dismissGuidePopupLoop } from './helpers';
 
 const TARGET_URL = 'https://www.makera.com/products/carvera';
 // 目标商品名称（断言购物车与结算页中商品存在的基准文本）
@@ -55,18 +55,36 @@ test.describe('US 站点', () => {
     // 定位方式：CSS 类名定位 product-form__submit（Shopify 商品表单内的真实加购按钮）
     // 页面存在多个 sticky-add-cart-btn 悬浮按钮，顶部时位于视口外，用文本定位会误匹配导致点击卡住
     const addToCartBtn = page.locator('button.product-form__submit[name="add"]').first();
-    await test.step('弹窗清理并点击 Add to cart 按钮', async () => {
+    await test.step('循环关闭引导弹窗并寻找 Add to cart 按钮', async () => {
+      // 寻找按钮前：循环关闭 "New to CNC?" 引导弹窗直到确认消失（弹窗延迟注入/反复显示，
+      // 单次关闭不可靠；循环内部每轮关闭后用文本标记复查，最多 5 轮）
+      let popupGone = await dismissGuidePopupLoop(page, 5);
+      // 找不到按钮时重新循环关闭弹窗的入口：按钮可见性检测最多找 3 轮，
+      // 每轮找不到就重新执行弹窗关闭循环（应对弹窗在寻找期间重新弹出遮挡渲染）再找一次
+      let btnFound = false;
+      for (let search = 1; search <= 3; search++) {
+        btnFound = await addToCartBtn.isVisible({ timeout: 3000 }).catch(() => false);
+        if (btnFound) break;
+        console.warn(`[US] ⚠️ 第${search}轮未找到 Add to cart 按钮，重新循环关闭引导弹窗后再找`);
+        popupGone = await dismissGuidePopupLoop(page, 5);
+        await page.waitForTimeout(1000);
+      }
+      // 3 轮循环关闭后仍找不到按钮则断言失败（触发自愈）
+      expect(btnFound, '[US] 循环关闭引导弹窗后仍未找到 Add to cart 按钮').toBe(true);
       await expect(addToCartBtn, '[US] Add to cart 按钮不可见').toBeVisible({ timeout: 10_000 });
-      console.log(`[US] ✅ Add to cart 按钮可见，准备点击加购`);
+      console.log(`[US] ✅ Add to cart 按钮可见（弹窗已清理: ${popupGone}），准备点击加购`);
       // 点击前等待 5s：给浮窗/懒加载元素渲染时间，便于一次性清理
       await page.waitForTimeout(5000);
-      // 循环最多 3 轮：每轮先关闭全部浮窗（幸运转盘/引导弹窗/翻译弹窗/客服悬浮/意外下拉），
+      // 点击前再执行一次循环关闭：等待 5s 期间弹窗可能重新注入
+      await dismissGuidePopupLoop(page, 3);
+      // 循环最多 3 轮：每轮先循环关闭引导弹窗+关闭全部浮窗（幸运转盘/翻译弹窗/客服悬浮/意外下拉），
       // 再滚动+点击。单次点击限时 8s，避免被遮挡时 Playwright 长时间自动滚动重试（页面上下滑动）
       let clicked = false;
       for (let attempt = 1; attempt <= 3; attempt++) {
-        // 先按 Escape 关闭意外展开的下拉浮窗，再清理所有已知浮窗（无论是否存在都安全执行，失败不阻断）
+        // 先按 Escape 关闭意外展开的下拉浮窗，再循环关闭引导弹窗并清理所有已知浮窗（无论是否存在都安全执行，失败不阻断）
         await page.keyboard.press('Escape').catch(() => {});
         await page.waitForTimeout(300);
+        await dismissGuidePopupLoop(page, 3);
         await dismissAllPopups(page);
         try {
           // 按钮位于首屏下方，显式滚动到按钮位置后再点击（timeout 防继承测试级 300s）
@@ -108,14 +126,23 @@ test.describe('US 站点', () => {
             console.warn(`[US] ⚠️ ${reason}，执行 AJAX API 兜底加购`);
             const added = await addToCartViaApi(page, TARGET_URL);
             expect(added, '[US] 兜底加购异常（AJAX API 返回失败）').toBe(true);
-            // 返回商品页恢复现场，再关闭弹窗
+            // 返回商品页恢复现场，再循环关闭引导弹窗（goto 后弹窗会重新注入）+关闭其他浮窗
             await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
+            await dismissGuidePopupLoop(page, 5);
             await dismissAllPopups(page);
-            // 通过顶部购物车图标打开抽屉（同域已有购物车商品，Dawn 主题会弹出 cart-drawer）
+            // 通过顶部购物车图标打开抽屉（同域已有购物车商品，Dawn 主题会弹出 cart-drawer）；
+            // 找不到/点击失败时重新循环关闭引导弹窗后重试（弹窗重新弹出会遮挡图标）
             const cartIcon = page.locator('a[href="/cart"]').first();
-            await cartIcon.scrollIntoViewIfNeeded({ timeout: 10000 }).catch(() => {});
-            await cartIcon.click({ timeout: 10000 }).catch(() => {});
-            await page.waitForTimeout(2000);
+            let iconOpened = false;
+            for (let retry = 1; retry <= 3; retry++) {
+              await cartIcon.scrollIntoViewIfNeeded({ timeout: 10000 }).catch(() => {});
+              await cartIcon.click({ timeout: 10000 }).catch(() => {});
+              await page.waitForTimeout(2000);
+              iconOpened = await cartDrawer.isVisible({ timeout: 3000 }).catch(() => false);
+              if (iconOpened) break;
+              console.warn(`[US] ⚠️ 第${retry}轮打开购物车抽屉失败，重新循环关闭引导弹窗后重试`);
+              await dismissGuidePopupLoop(page, 5);
+            }
             await expect(cartDrawer, '[US] 兜底加购成功但购物车抽屉未能打开').toBeVisible({ timeout: 15_000 });
             break;
           }
@@ -194,12 +221,16 @@ test.describe('US 站点', () => {
         // 兜底一：force 强制点击（跳过可操作性检查，应对持续被浮层拦截的场景）
         console.warn(`[US] ⚠️ 3 轮常规点击失败，尝试 force 强制点击`);
         await checkOutBtn.click({ force: true, timeout: 8000 }).catch(() => {});
-        await page.waitForTimeout(3000);
-        if (!page.url().includes('/checkouts/')) {
+        // force 点击可能已触发 Shopify 跨域结算导航（checkout 域名），先等待跳转生效再判断，
+        // 避免在导航进行中发起新的 goto（相对 URL 此时无法解析会报 "Cannot navigate to invalid URL"）
+        try {
+          await page.waitForURL(/\/checkouts\/|\/checkout/, { timeout: 15000 });
+        } catch {
           // 兜底二：Shopify 标准结算入口 /checkout（同域购物车会话有效时直达当前购物车结算页），
-          // 与点击 Check out 按钮的业务目标一致，保证"进入结算页"这一验证点可达
-          console.warn(`[US] ⚠️ force 点击仍未跳转结算页，改用 /checkout 直接导航兜底`);
-          await page.goto('/checkout', { waitUntil: 'domcontentloaded', timeout: 60000 });
+          // 与点击 Check out 按钮的业务目标一致，保证"进入结算页"这一验证点可达。
+          // 必须用绝对 URL：跨域导航残留时相对路径无法解析；导航失败也不阻断（交由阶段3断言判定）
+          console.warn(`[US] ⚠️ force 点击仍未跳转结算页，改用绝对 URL 直达 /checkout 兜底`);
+          await page.goto('https://www.makera.com/checkout', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
         }
       }
       console.log(`[US] 💳 已触发 Check Out，等待结算页加载...`);

@@ -11,9 +11,9 @@ on:
   push:
     branches: [ "master" ]
 
-  # 定时触发：UTC 23:00（北京时间次日7.）
+  # 定时触发：UTC 23:45（北京时间次日 7:45）
   schedule:
-    - cron: '0 23 * * *'
+    - cron: '45 23 * * *'
 
   # 手动触发（用于测试和调试）
   workflow_dispatch:
