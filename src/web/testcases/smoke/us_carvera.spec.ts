@@ -88,7 +88,6 @@ test.describe('US 站点', () => {
         await dismissAllPopups(page);
         try {
           // 按钮位于首屏下方，显式滚动到按钮位置后再点击（timeout 防继承测试级 300s）
-          await addToCartBtn.scrollIntoViewIfNeeded({ timeout: 10000 });
           await addToCartBtn.click({ timeout: 8000 });
           clicked = true;
           break;
