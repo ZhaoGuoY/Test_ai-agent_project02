@@ -3,7 +3,7 @@
 // 供 Allure 详细报告展示（步骤树/参数/预期一目了然）
 import { test as base, expect, Page } from '@playwright/test';
 import { parameter } from 'allure-js-commons';
-import { setupPage, dismissAllPopups, addToCartViaApi } from './helpers';
+import { setupPage, dismissAllPopups, addToCartViaApi, dismissCloudflareChallenge } from './helpers';
 
 const TARGET_URL = 'https://global.makera.com/products/makera-z1-desktop-cnc';
 // 目标商品名称（断言购物车与结算页中商品存在的基准文本；
@@ -48,7 +48,7 @@ test.describe('Global 站点', () => {
     await test.step('页面初始化与跳转防护', async () => {
       const ready = await setupPage(page, TARGET_URL);
       // setup 失败视为测试失败（触发自愈），不允许跳过
-      expect(ready, `[Global] 页面初始化失败，URL: ${page.url()}`).toBe(true);
+      expect(ready).toBe(true);
       // 验证 URL 包含 /products/（URL 字符串断言）
       expect(page.url()).toContain('/products/');
     });
@@ -98,7 +98,7 @@ test.describe('Global 站点', () => {
           if (page.url().includes('/cart/add')) {
             console.warn(`[Global] ⚠️ 页面已跳转到 /cart/add 错误页，执行 AJAX API 兜底加购`);
             const added = await addToCartViaApi(page, TARGET_URL);
-            expect(added, '[Global] 兜底加购失败（AJAX API 返回失败）').toBe(true);
+            expect(added).toBe(true);
             // 返回商品页恢复现场，再关闭弹窗
             await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
             await dismissAllPopups(page);
@@ -107,7 +107,7 @@ test.describe('Global 站点', () => {
             await cartIcon.scrollIntoViewIfNeeded({ timeout: 10000 }).catch(() => {});
             await cartIcon.click({ timeout: 10000 }).catch(() => {});
             await page.waitForTimeout(2000);
-            await expect(cartDrawer, '[Global] 兜底加购成功但购物车抽屉未能打开').toBeVisible({ timeout: 15000 });
+            await expect(cartDrawer).toBeVisible({ timeout: 15000 });
             break;
           }
           console.warn(`[Global] ⚠️ 第${attempt}轮：购物车抽屉未弹出，清理浮窗后重新点击加购`);
@@ -122,7 +122,7 @@ test.describe('Global 站点', () => {
       // 定位方式：限定在购物车抽屉（dialog）内用 getByRole 定位商品链接
       // （页面导航菜单中也存在同名隐藏文本，不限定范围会被 .first() 误匹配）
       const productInCart = cartDrawer.getByRole('link', { name: PRODUCT_NAME }).first();
-      await expect(productInCart, `[Global] 购物车中未找到目标商品: ${PRODUCT_NAME}`).toBeVisible({ timeout: 10000 });
+      await expect(productInCart).toBeVisible({ timeout: 10000 });
       console.log(`[Global] ✅ 购物车中存在目标商品: ${PRODUCT_NAME}`);
     });
   });
@@ -142,7 +142,7 @@ test.describe('Global 站点', () => {
     const cartDrawer = page.getByRole('dialog', { name: /my cart/i }).first();
     await test.step('前置检查：购物车抽屉处于弹出状态', async () => {
       // 本用例直接沿用上一用例的页面现场，不重新初始化、不重新加购
-      await expect(cartDrawer, '[Global] 前置条件不满足：购物车抽屉未弹出（上一用例未成功加购）').toBeVisible({ timeout: 15000 });
+      await expect(cartDrawer).toBeVisible({ timeout: 15000 });
       console.log(`[Global] ✅ 购物车抽屉已弹出，直接开始点击 Check Out`);
     });
 
@@ -173,13 +173,21 @@ test.describe('Global 站点', () => {
       await page.waitForTimeout(7000);
       console.log(`[Global] ✅ 等待完成，开始断言`);
 
+      // 检测并处理 Cloudflare 真人验证（结算页导航可能触发）
+      const cfPassed = await dismissCloudflareChallenge(page, 30000);
+      if (!cfPassed) {
+        console.warn(`[Global] ️ Cloudflare 验证首次未通过，等待 10s 后重试检测...`);
+        await page.waitForTimeout(10000);
+        await dismissCloudflareChallenge(page, 20000).catch(() => {});
+      }
+
       // 定位方式：getByText 文本定位（结算页订单摘要区展示商品名称）
       const productInCheckout = page.getByText(PRODUCT_NAME).first();
-      await expect(productInCheckout, `[Global] 结算页中未找到目标商品: ${PRODUCT_NAME}`).toBeVisible({ timeout: 15000 });
+      await expect(productInCheckout).toBeVisible({ timeout: 15000 });
       console.log(`[Global] ✅ 结算页中存在目标商品: ${PRODUCT_NAME}`);
 
       // 定位方式：toHaveURL 正则断言（Shopify 结算页形如 global.makera.com/checkouts/cn/xxxx）
-      await expect(page, '[Global] 未成功跳转至结算页 /checkouts/').toHaveURL(
+      await expect(page).toHaveURL(
         /global\.makera\.com\/checkouts\//,
         { timeout: 30000 }
       );

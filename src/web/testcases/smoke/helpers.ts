@@ -495,6 +495,74 @@ async function switchToTargetStore(page: Page, targetUrl: string): Promise<boole
 }
 
 /**
+ * 检测并自动通过 Cloudflare Turnstile 真人验证
+ *
+ * GitHub Actions 数据中心 IP 易触发 Cloudflare 验证页（"Verify you are human"），
+ * 该函数检测验证页 → 点击 checkbox → 等待自动通过。
+ * Turnstile 在浏览器指纹正常时通常点击即可通过；若要求额外挑战则无法自动通过，
+ * 返回 false 但不阻断流程，由调用方决定是否终止。
+ *
+ * @returns true=验证通过或未遇到验证页；false=遇到验证页但未能通过
+ */
+export async function dismissCloudflareChallenge(page: Page, maxWaitMs = 30000): Promise<boolean> {
+  console.log(`[helpers]   🔄 检查 Cloudflare 真人验证...`);
+
+  // 检测是否在 Cloudflare 验证页（通过页面特征文本判断，timeout 放宽到 5s 确保 DOM 渲染完成）
+  const isChallengePage = await page.locator('text=Verify you are human').first()
+    .isVisible({ timeout: 5000 }).catch(() => false);
+
+  if (!isChallengePage) {
+    console.log(`[helpers]   ℹ️ 未检测到 Cloudflare 验证页`);
+    return true;
+  }
+
+  console.log(`[helpers]   ️ 检测到 Cloudflare 验证页，尝试自动通过...`);
+
+  // 策略1：直接点击页面中的 checkbox（Turnstile 新版直接渲染在页面 DOM 中，不在 iframe 内）
+  let clicked = false;
+  try {
+    const checkbox = page.locator('input[type="checkbox"]').first();
+    await checkbox.click({ timeout: 10000 });
+    clicked = true;
+    console.log(`[helpers]   ✅ 已点击页面 checkbox`);
+  } catch {
+    console.log(`[helpers]   ℹ️ 页面 checkbox 点击失败，尝试 iframe 方式...`);
+  }
+
+  // 策略2：兜底 — 通过 Turnstile iframe 定位 checkbox
+  if (!clicked) {
+    try {
+      const iframeLocator = page.frameLocator('iframe[src*="challenges.cloudflare.com"]');
+      const checkbox = iframeLocator.locator('input[type="checkbox"], [role="checkbox"]');
+      await checkbox.first().click({ timeout: 10000 });
+      clicked = true;
+      console.log(`[helpers]   ✅ 已点击 Turnstile iframe 内 checkbox`);
+    } catch {
+      console.log(`[helpers]   ℹ️ iframe 内点击也失败，尝试 force 点击...`);
+    }
+  }
+
+  // 策略3：兜底 — force 强制点击（绕过可见性限制）
+  if (!clicked) {
+    await page.locator('input[type="checkbox"]').first()
+      .click({ force: true, timeout: 5000 }).catch(() => {});
+    console.log(`[helpers]   ✅ 已 force 点击页面 checkbox`);
+  }
+
+  // 等待验证通过（验证页消失或跳转到目标页面）
+  try {
+    await page.waitForFunction(() => {
+      return !document.body.innerText.includes('Verify you are human');
+    }, { timeout: maxWaitMs });
+    console.log(`[helpers]   ✅ Cloudflare 验证已通过`);
+    return true;
+  } catch {
+    console.warn(`[helpers]   ⚠️ Cloudflare 验证超时未通过（${maxWaitMs}ms），可能需要人工介入`);
+    return false;
+  }
+}
+
+/**
  * 页面初始化：导航 → 循环检测跳转 → 循环切换商店 → 验证
  */
 export async function setupPage(page: Page, url: string): Promise<boolean> {
@@ -504,6 +572,12 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
   console.log(`[helpers] 🔄 正在导航到: ${url}`);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 180000 });
   console.log(`[helpers] ✅ 导航完成，当前 URL: ${page.url()}`);
+
+  // 1.5 检测并处理 Cloudflare 真人验证（GitHub Actions 数据中心 IP 易触发）
+  const cfPassed = await dismissCloudflareChallenge(page);
+  if (!cfPassed) {
+    console.warn(`[helpers] ️ Cloudflare 验证未通过，后续测试可能受影响`);
+  }
 
   // 2. 立即开始循环检测跳转（每 2 秒一次，共 40 秒）
   let redirectDetected = false;
@@ -550,6 +624,8 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
         console.log(`[helpers]     ⏳ 导航中（超时 60s）...`);
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
         console.log(`[helpers]     ✅ 导航成功`);
+        // 重新导航后也可能触发 Cloudflare 验证
+        await dismissCloudflareChallenge(page).catch(() => {});
       } catch (err) {
         // 超时后验证是否已回到目标站点
         const currentHost = new URL(page.url()).hostname;
@@ -597,6 +673,8 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
   if (retried) {
     await page.waitForTimeout(3000);
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+    // 兜底导航后也可能触发 Cloudflare 验证
+    await dismissCloudflareChallenge(page).catch(() => {});
     const retryHost = new URL(page.url()).hostname;
     if (retryHost === targetHost) {
       console.log(`[helpers]   🧹 关闭弹窗...`);

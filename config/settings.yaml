@@ -9,7 +9,7 @@ target:
     - name: US
       url: "https://www.makera.com/products/carvera"
     - name: EU
-      url: "https://eu.makera.com/products/carvera-air"
+      url: "https://eu.makera.com/products/dust-collector-lite"
     - name: Global
       url: "https://global.makera.com/products/makera-z1-desktop-cnc"
   title_contains: "Makera"   # 用于增量1冒烟测试断言

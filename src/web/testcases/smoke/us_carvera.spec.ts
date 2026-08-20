@@ -3,7 +3,7 @@
 // 供 Allure 详细报告展示（步骤树/参数/预期一目了然）
 import { test as base, expect, Page } from '@playwright/test';
 import { parameter } from 'allure-js-commons';
-import { setupPage, dismissAllPopups, addToCartViaApi, dismissGuidePopupLoop } from './helpers';
+import { setupPage, dismissAllPopups, addToCartViaApi, dismissGuidePopupLoop, dismissCloudflareChallenge } from './helpers';
 
 const TARGET_URL = 'https://www.makera.com/products/carvera';
 // 目标商品名称（断言购物车与结算页中商品存在的基准文本）
@@ -46,7 +46,7 @@ test.describe('US 站点', () => {
     await test.step('页面初始化与跳转防护', async () => {
       const ready = await setupPage(page, TARGET_URL);
       // setup 失败视为测试失败（触发自愈），不允许跳过
-      expect(ready, `[US] 页面初始化失败，URL: ${page.url()}`).toBe(true);
+      expect(ready).toBe(true);
       // 验证 URL 包含 /products/（URL 字符串断言）
       expect(page.url()).toContain('/products/');
     });
@@ -70,8 +70,8 @@ test.describe('US 站点', () => {
         await page.waitForTimeout(1000);
       }
       // 3 轮循环关闭后仍找不到按钮则断言失败（触发自愈）
-      expect(btnFound, '[US] 循环关闭引导弹窗后仍未找到 Add to cart 按钮').toBe(true);
-      await expect(addToCartBtn, '[US] Add to cart 按钮不可见').toBeVisible({ timeout: 10_000 });
+      expect(btnFound).toBe(true);
+      await expect(addToCartBtn).toBeVisible({ timeout: 10_000 });
       console.log(`[US] ✅ Add to cart 按钮可见（弹窗已清理: ${popupGone}），准备点击加购`);
       // 点击前等待 5s：给浮窗/懒加载元素渲染时间，便于一次性清理
       await page.waitForTimeout(5000);
@@ -114,7 +114,7 @@ test.describe('US 站点', () => {
       // 2) 已点击 2 次但抽屉始终未弹出（点击本身成功但加购未生效，UI 重试无意义）
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-          await expect(cartDrawer, '[US] 加购后购物车抽屉未弹出').toBeVisible({ timeout: 15_000 });
+          await expect(cartDrawer).toBeVisible({ timeout: 15_000 });
           break;
         } catch {
           const onCartAddErrorPage = page.url().includes('/cart/add');
@@ -124,7 +124,7 @@ test.describe('US 站点', () => {
               : '已点击 2 次但购物车抽屉始终未弹出（点击可能被页面 JS 拦截，改走 API 加购）';
             console.warn(`[US] ⚠️ ${reason}，执行 AJAX API 兜底加购`);
             const added = await addToCartViaApi(page, TARGET_URL);
-            expect(added, '[US] 兜底加购异常（AJAX API 返回失败）').toBe(true);
+            expect(added).toBe(true);
             // 返回商品页恢复现场，再循环关闭引导弹窗（goto 后弹窗会重新注入）+关闭其他浮窗
             await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
             await dismissGuidePopupLoop(page, 5);
@@ -142,7 +142,7 @@ test.describe('US 站点', () => {
               console.warn(`[US] ⚠️ 第${retry}轮打开购物车抽屉失败，重新循环关闭引导弹窗后重试`);
               await dismissGuidePopupLoop(page, 5);
             }
-            await expect(cartDrawer, '[US] 兜底加购成功但购物车抽屉未能打开').toBeVisible({ timeout: 15_000 });
+            await expect(cartDrawer).toBeVisible({ timeout: 15_000 });
             break;
           }
           console.warn(`[US] ⚠️ 第${attempt}轮：购物车抽屉未弹出，清理浮窗后重新点击加购`);
@@ -156,7 +156,7 @@ test.describe('US 站点', () => {
       // 定位方式：限定在购物车抽屉（dialog）内用 getByRole 定位商品链接
       // （页面导航菜单中也存在同名隐藏文本，不限定范围会被 .first() 误匹配）
       const productInCart = cartDrawer.getByRole('link', { name: PRODUCT_NAME }).first();
-      await expect(productInCart, `[US] 购物车中未找到目标商品: ${PRODUCT_NAME}`).toBeVisible({ timeout: 10_000 });
+      await expect(productInCart).toBeVisible({ timeout: 10_000 });
       console.log(`[US] ✅ 购物车中存在目标商品: ${PRODUCT_NAME}`);
     });
   });
@@ -200,7 +200,7 @@ test.describe('US 站点', () => {
       // 定位方式：限定在购物车抽屉（dialog）内匹配 "Check out"
       //（该控件在不同渲染状态下可能是 button 或 link 角色，用逗号选择器兼容两种形态）
       const checkOutBtn = cartDrawer.locator('button, a').getByText(/check\s*out/i).first();
-      await expect(checkOutBtn, '[US] 购物车抽屉内未找到 Check out 按钮').toBeVisible({ timeout: 10_000 });
+      await expect(checkOutBtn).toBeVisible({ timeout: 10_000 });
       console.log(`[US] ✅ Check Out 按钮可见，准备进入结算页`);
       // 循环最多 3 轮：每轮先关闭全部浮窗，再显式滚动到按钮位置后点击（抽屉内容很长，
       // 按钮可能处于视口外/懒加载区域；单次点击限时 8s，防遮挡时 Playwright 长时间自动滚动重试）
@@ -241,13 +241,21 @@ test.describe('US 站点', () => {
       await page.waitForTimeout(7000);
       console.log(`[US] ✅ 等待完成，开始断言`);
 
+      // 检测并处理 Cloudflare 真人验证（结算页导航可能触发）
+      const cfPassed = await dismissCloudflareChallenge(page, 30000);
+      if (!cfPassed) {
+        console.warn(`[US] ⚠️ Cloudflare 验证首次未通过，等待 10s 后重试检测...`);
+        await page.waitForTimeout(10000);
+        await dismissCloudflareChallenge(page, 20000).catch(() => {});
+      }
+
       // 定位方式：getByText 文本定位（结算页订单摘要区展示商品名称）
       const productInCheckout = page.getByText(PRODUCT_NAME).first();
-      await expect(productInCheckout, `[US] 结算页中未找到目标商品: ${PRODUCT_NAME}`).toBeVisible({ timeout: 15_000 });
+      await expect(productInCheckout).toBeVisible({ timeout: 15_000 });
       console.log(`[US] ✅ 结算页中存在目标商品: ${PRODUCT_NAME}`);
 
       // 定位方式：toHaveURL 正则断言（Shopify 结算页形如 www.makera.com/checkouts/cn/xxxx）
-      await expect(page, '[US] 未成功跳转至结算页 /checkouts/').toHaveURL(
+      await expect(page).toHaveURL(
         /www\.makera\.com\/checkouts\//,
         { timeout: 30000 }
       );

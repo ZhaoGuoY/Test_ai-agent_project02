@@ -151,6 +151,7 @@ class PlaywrightRunner:
                 encoding='utf-8',
                 errors='replace',
                 timeout=240,
+                shell=True if sys.platform == 'win32' else False,
             )
             logger.info(f"生成脚本完成，返回码: {result.returncode}")
             if result.stdout:
@@ -207,10 +208,23 @@ class PlaywrightRunner:
                 encoding='utf-8',
                 errors='replace',
                 timeout=120,
+                shell=True if sys.platform == 'win32' else False,
             )
             logger.info(f"Allure 报告生成完成，返回码: {result.returncode}")
             if result.returncode == 0:
                 logger.info(f"[Allure] 报告已生成 → {report_dir}")
+                # 注入防缓存 meta 标签，确保浏览器每次打开都加载最新数据
+                index_html = report_dir / "index.html"
+                if index_html.exists():
+                    try:
+                        content = index_html.read_text(encoding='utf-8')
+                        if '<meta http-equiv="Cache-Control"' not in content:
+                            cache_meta = '<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">\n    <meta http-equiv="Pragma" content="no-cache">\n    <meta http-equiv="Expires" content="0">'
+                            content = content.replace('<meta charset="utf-8">', f'<meta charset="utf-8">\n    {cache_meta}')
+                            index_html.write_text(content, encoding='utf-8')
+                            logger.info(f"[Allure] 已注入防缓存 meta 标签")
+                    except Exception as e:
+                        logger.warning(f"[Allure] 注入防缓存标签失败（不影响报告）: {e}")
             else:
                 logger.warning(f"[Allure] 报告生成失败（不阻断主流程）: {result.stderr[:300]}")
             return result.returncode, result.stdout, result.stderr

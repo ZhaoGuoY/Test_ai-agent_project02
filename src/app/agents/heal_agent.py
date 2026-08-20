@@ -360,16 +360,13 @@ class HealAgent(BaseAgent):
 1. **首先阅读任务 prompt 中的「错误分析与修复建议」**，理解失败原因
 2. 读取失败用例列表（调用 `get_current_failures`）
 3. **只对失败的用例执行自愈，已通过的用例绝对不要重跑或修改**
-4. 对每个失败用例调用 `heal_single_case`，必须传入以下参数：
+4. **批量修复所有失败用例**：对每个失败用例调用 `heal_single_case`（不要修一个就跑一次测试！），必须传入以下参数：
    - url: 从上方映射表中查找对应站点的 URL
    - failed_test_name: 失败用例的 name 字段（格式 "站点名 › 实际测试名"）
    - error_message: 失败用例的 message 字段
    - classname: 失败用例的 classname 字段（用于自动定位 spec 文件）
-5. **检查 heal_single_case 返回值**：
-   - 如果返回 ✅ 修复成功 → 调用 `run_tests_and_get_failures(spec_file="站点spec文件名")` 验证
-     （包括环境类失败：heal_specs 判定页面初始化失败等环境/网络错误时不修改代码也返回 ✅，
-     此时同样必须调用 run_tests 重跑验证，因为重跑才是此类失败的正确应对）
-   - 如果返回 ❌ 修复失败 / ⏰ 超时 → **禁止调用 run_tests**，必须分析错误原因并重试 heal_single_case
+5. **所有失败用例修复完成后，只调用一次** `run_tests_and_get_failures(spec_file="站点spec文件名")` 验证
+   - ⚠️ **每个重试周期内绝对只允许调用一次 run_tests_and_get_failures**
    - 如 classname 含 "eu_" → spec_file="eu_carvera.spec.ts"
    - 如 classname 含 "us_" → spec_file="us_carvera.spec.ts"
    - 如 classname 含 "global_" → spec_file="global_carvera.spec.ts"
@@ -381,18 +378,23 @@ class HealAgent(BaseAgent):
 1. **阅读任务 prompt 中的「错误分析与修复建议」**，确定修复方向
 2. 调用 `get_current_failures` 获取初始失败列表
 3. 如果列表为空，直接报告"无需修复，全部通过"
-4. **只遍历 failures 数组中的用例**（pass 数组中的用例已通过，绝对禁止触碰），对每个失败用例调用 `heal_single_case`：
+4. **批量修复所有失败用例**：对 failures 数组中的每个用例调用 `heal_single_case`（不要修一个就跑一次测试！）
    - 从 classname 判断站点（如含 "us_" → US，含 "eu_" → EU，含 "global_" → Global）
    - 从上方映射表获取对应 URL
    - 务必传入 classname 参数
    - **根据错误分析中的建议修改代码**（如添加 dismissSpinPopup、使用 force: true 等）
-5. **检查 heal_single_case 返回值**：
-   - ✅ 修复成功 → 调用 `run_tests_and_get_failures(spec_file="对应站点的spec文件名")` 验证
-     （环境类失败不修改代码也返回 ✅，同样必须重跑验证，确保失败用例至少获得一次重跑机会）
-   - ❌ 失败 / ⏰ 超时 → **禁止调用 run_tests**，分析错误后重试 heal_single_case
+5. **批量修复完成后，只调用一次** `run_tests_and_get_failures(spec_file="对应站点的spec文件名")` 验证
+   - ⚠️ **每个重试周期内绝对只允许调用一次 run_tests_and_get_failures**
+   - 环境类失败不修改代码也返回 ✅，同样必须重跑验证
 6. 调用 `check_if_all_passed` 判断结果
 7. 如果还有失败且重试次数 < {self.MAX_RETRIES}，回到步骤4
 8. 达到最大重试次数后，报告最终状态
+
+## 重跑次数限制（极其重要）
+- **最大自愈周期数：{self.MAX_RETRIES} 次**
+- **每个周期内只允许调用 1 次 run_tests_and_get_failures**（批量修复所有失败用例后再统一验证）
+- **总重跑次数上限 = {self.MAX_RETRIES} 次**，绝对不允许超过
+- 禁止行为：修一个用例就跑一次测试、重复验证、无意义的多次重跑
 
 ## 输出要求
 - 用中文汇报
@@ -405,7 +407,7 @@ class HealAgent(BaseAgent):
 - **只修复失败用例，已通过的用例不要触碰**
 - **只修复现有失败用例的定位器，禁止探索新测试点、禁止新增 test() 用例、禁止扩大测试范围**
 - **优先使用任务 prompt 中的错误分析指导修复，不要盲目尝试**
-- 修复后调用 `run_tests_and_get_failures(spec_file="eu_carvera.spec.ts")` **只重跑该站点用例**，不要跑全部测试
+- **重跑次数限制**：每个自愈周期内只允许调用 1 次 run_tests_and_get_failures，总重跑次数不超过 {self.MAX_RETRIES} 次
 - **heal_single_case 返回失败/超时时，绝对不允许直接调用 run_tests_and_get_failures**
   - 必须先分析错误原因（如 ts-node 不存在、超时、脚本异常等），尝试解决后重新调用 heal_single_case
   - 只有 heal_single_case 返回 ✅ 修复成功 后，才能调用 run_tests_and_get_failures 验证
