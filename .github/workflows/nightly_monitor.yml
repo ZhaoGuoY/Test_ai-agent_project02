@@ -117,9 +117,13 @@ jobs:
           set -e
           REPORT_DIR=workspace/allure-report
           if [ ! -f "$REPORT_DIR/index.html" ]; then
-            echo "⚠️ Allure 报告中缺少 index.html，跳过部署"
+            echo "️ Allure 报告中缺少 index.html，跳过部署"
             exit 0
           fi
+          # 清理大附件（.zip/.png），避免超过 GitHub 100MB 推送限制
+          # 这些文件通常是 Playwright trace 或截图，对报告核心功能非必需
+          find "$REPORT_DIR/data/attachments" -type f \( -name "*.zip" -o -name "*.png" \) -delete 2>/dev/null || true
+          echo "✅ 已清理大附件，准备部署报告"
           cd "$REPORT_DIR"
           git init -b gh-pages
           git config user.name "github-actions[bot]"

@@ -21,6 +21,9 @@ workspace/allure-results/
 workspace/allure-heal-results/
 # Allure 生成的静态报告
 workspace/allure-report/
+# Allure 报告中的大附件（trace/截图，避免超过 GitHub 100MB 限制）
+workspace/allure-report/data/attachments/*.zip
+workspace/allure-report/data/attachments/*.png
 # Agent 生成的临时脚本（如 check_*.py、run_*.py）
 workspace/*.py
 workspace/*.log
