@@ -303,7 +303,15 @@ async function switchToTargetStore(page: Page, targetUrl: string): Promise<boole
     targetStoreOption = 'Global Store';
   }
 
-  console.log(`[helpers]   🎯 按钮文本: "${currentButtonText}", 目标选项: "${targetStoreOption}"`);
+  console.log(`[helpers]    按钮文本: "${currentButtonText}", 目标选项: "${targetStoreOption}"`);
+
+  // 按钮文本候选列表：页面被 IP 重定向后，切换按钮显示的文本可能与预期不同，
+  // 因此准备多个候选文本依次尝试，提高查找成功率
+  const buttonTextCandidates = currentHost.includes('eu')
+    ? ['EU', 'Europe', 'EU Store', 'European Union']
+    : currentHost.includes('global')
+    ? ['Global', 'Global Store', 'International', 'Rest of World']
+    : ['United States (EN)', 'US', 'US Store', 'United States', 'America'];
   console.log(`[helpers]   ⏱️ 开始查找切换按钮（超时 30s）...`);
 
   // 循环查找切换按钮（超时 30 秒，每 2 秒重试）
@@ -313,30 +321,34 @@ async function switchToTargetStore(page: Page, targetUrl: string): Promise<boole
 
   while (Date.now() - buttonStartTime < buttonTimeout) {
     const elapsed = Math.floor((Date.now() - buttonStartTime) / 1000);
-    console.log(`[helpers]     🔍 第${Math.floor(elapsed/2)+1}次查找按钮: "${currentButtonText}"（${elapsed}s/30s）`);
+    console.log(`[helpers]     🔍 第${Math.floor(elapsed/2)+1}次查找按钮（${elapsed}s/30s）`);
 
     // 每次查找前先关闭转盘，防止遮挡切换按钮
     await dismissSpinPopup(page);
-    console.log(`[helpers]     🔄 尝试 6 种选择器查找按钮...`);
 
-    // 查找商店切换按钮（span 标签，类名 spicegems_switcher_list-flags）
-    const selectors = [
-      `span:has-text("${currentButtonText}")`,  // span 标签精确匹配
-      `.spicegems_switcher_list-flags`,  // 直接类名
-      `[class*="switcher"]`,  // 类名包含 switcher
-      `*:has-text("${currentButtonText}")`,  // 不限标签兜底
-      `button:has-text("${currentButtonText}")`,
-      `[aria-label*="store" i]`,
-    ];
-
+    // 遍历所有候选按钮文本，逐一尝试查找
     let switcherButton = null;
-    for (const selector of selectors) {
-      const btn = page.locator(selector).first();
-      if (await btn.isVisible({ timeout: 500 }).catch(() => false)) {
-        switcherButton = btn;
-        console.log(`[helpers] ✅ 找到切换按钮（选择器: ${selector}）`);
-        break;
+    let matchedText = '';
+    for (const btnText of buttonTextCandidates) {
+      console.log(`[helpers]     🔄 尝试按钮文本: "${btnText}"`);
+      const selectors = [
+        `span:has-text("${btnText}")`,
+        `.spicegems_switcher_list-flags`,
+        `[class*="switcher"]`,
+        `*:has-text("${btnText}")`,
+        `button:has-text("${btnText}")`,
+        `[aria-label*="store" i]`,
+      ];
+      for (const selector of selectors) {
+        const btn = page.locator(selector).first();
+        if (await btn.isVisible({ timeout: 300 }).catch(() => false)) {
+          switcherButton = btn;
+          matchedText = btnText;
+          console.log(`[helpers] ✅ 找到切换按钮（文本: "${btnText}", 选择器: ${selector}）`);
+          break;
+        }
       }
+      if (switcherButton) break;
     }
 
     if (switcherButton) {
@@ -349,19 +361,18 @@ async function switchToTargetStore(page: Page, targetUrl: string): Promise<boole
       break;
     }
 
-    // 调试：打印包含目标文本的所有元素（不限标签）
-    const debugInfo = await page.evaluate((searchText) => {
-      const allElements = Array.from(document.querySelectorAll('*'))
-        .filter(el => el.textContent?.trim() === searchText || el.textContent?.trim().includes(searchText))
-        .map(el => ({ tag: el.tagName, text: el.textContent?.trim()?.substring(0, 50), class: el.className?.toString()?.substring(0, 50) }))
-        .slice(0, 5);
-      const buttons = Array.from(document.querySelectorAll('button, [role="button"]'))
+    // 调试：打印页面所有按钮文本，帮助排查按钮文本不匹配问题
+    const debugInfo = await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button, [role="button"], span, a'))
         .map(b => b.textContent?.trim())
-        .filter(t => t && t.length < 50);
-      return { matchingElements: allElements, buttons: buttons.slice(0, 10) };
-    }, currentButtonText);
-    console.log(`[helpers] 🔍 匹配"${currentButtonText}"的元素: ${JSON.stringify(debugInfo.matchingElements)}`);
-    console.log(`[helpers] 🔍 页面按钮: ${JSON.stringify(debugInfo.buttons)}`);
+        .filter(t => t && t.length < 50 && /store|country|region|united|global|eu|europe|america/i.test(t));
+      const switchers = Array.from(document.querySelectorAll('[class*="switcher"], [class*="spicegems"]'))
+        .map(el => ({ tag: el.tagName, text: el.textContent?.trim()?.substring(0, 60), class: el.className?.toString()?.substring(0, 60) }))
+        .slice(0, 5);
+      return { buttons: [...new Set(buttons)].slice(0, 15), switchers };
+    });
+    console.log(`[helpers] 🔍 页面按钮(含store/country等关键词): ${JSON.stringify(debugInfo.buttons)}`);
+    console.log(`[helpers] 🔍 切换器元素: ${JSON.stringify(debugInfo.switchers)}`);
 
     console.log(`[helpers]     ⚠️ 本轮未找到按钮，等待 2s 重试...`);
     await page.waitForTimeout(2000);
@@ -614,7 +625,26 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
       const switched = await switchToTargetStore(page, url);
       if (!switched) {
         console.error(`[helpers] ❌ 商店切换失败（第${round}轮）`);
-        if (round === 2) return false;
+        if (round === 2) {
+          // 商店切换器完全失败时，尝试直接导航到目标 URL（带缓存破坏参数）
+          // 有时 Shopify 的地域 cookie 已在切换过程中设置，直接导航可能成功
+          console.warn(`[helpers] ⚠️ 商店切换器失败，尝试直接导航兜底...`);
+          const cacheBustUrl = `${url}?_t=${Date.now()}`;
+          try {
+            await page.goto(cacheBustUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await dismissCloudflareChallenge(page).catch(() => {});
+            const directHost = new URL(page.url()).hostname;
+            const directHasProductPath = page.url().includes('/products/');
+            if (directHost === targetHost && directHasProductPath) {
+              console.log(`[helpers] ✅ 直接导航兜底成功: ${page.url()}`);
+              await dismissAllPopups(page).catch(() => {});
+              return true;
+            }
+          } catch (directErr) {
+            console.warn(`[helpers] ️ 直接导航兜底也失败: ${directErr}`);
+          }
+          return false;
+        }
         continue;
       }
       console.log(`[helpers]   ⏳ 等待 3s 让商店切换完成...`);
@@ -689,6 +719,23 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
       console.log(`[helpers] ✅✅✅ 页面初始化成功（兜底重试）: ${retryUrl}`);
       return true;
     }
+  }
+  // 兜底2：商店切换器也失败时，尝试直接导航（带缓存破坏参数）
+  console.warn(`[helpers] ⚠️ 商店切换兜底也失败，尝试直接导航...`);
+  try {
+    const cacheBustUrl = `${url}?_t=${Date.now()}`;
+    await page.goto(cacheBustUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await dismissCloudflareChallenge(page).catch(() => {});
+    const directUrl = page.url();
+    const directHost = new URL(directUrl).hostname;
+    const directHasProductPath = directUrl.includes('/products/');
+    if (directHost === targetHost && directHasProductPath) {
+      await dismissAllPopups(page).catch(() => {});
+      console.log(`[helpers] ✅✅✅ 页面初始化成功（直接导航兜底）: ${directUrl}`);
+      return true;
+    }
+  } catch (directErr) {
+    console.warn(`[helpers] ⚠️ 直接导航兜底也失败: ${directErr}`);
   }
   console.log(`[helpers] ❌❌ 页面初始化失败: ${page.url()}，目标 host: ${targetHost}，期望含 /products/`);
   return false;
