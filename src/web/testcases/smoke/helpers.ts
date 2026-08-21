@@ -576,9 +576,9 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
   // 1.5 检测并处理 Cloudflare 真人验证（GitHub Actions 数据中心 IP 易触发）
   const cfPassed = await dismissCloudflareChallenge(page);
   if (!cfPassed) {
-    console.warn(`[helpers] ️ Cloudflare 验证未通过，后续测试可能受影响`);
+    console.warn(`[helpers] ⚠️ Cloudflare 验证未通过，后续测试可能受影响`);
   }
-
+  
   // 2. 立即开始循环检测跳转（每 2 秒一次，共 40 秒）
   let redirectDetected = false;
   for (let i = 1; i <= 20; i++) {
@@ -627,22 +627,26 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
         // 重新导航后也可能触发 Cloudflare 验证
         await dismissCloudflareChallenge(page).catch(() => {});
       } catch (err) {
-        // 超时后验证是否已回到目标站点
-        const currentHost = new URL(page.url()).hostname;
-        if (currentHost === targetHost) {
-          console.log(`[helpers]     ⚠️ 导航超时但 host 正确，继续: ${page.url()}`);
+        // 超时后验证是否已回到目标站点（host 正确且含 /products/）
+        const currentUrl = page.url();
+        const currentHost = new URL(currentUrl).hostname;
+        const currentHasProductPath = currentUrl.includes('/products/');
+        if (currentHost === targetHost && currentHasProductPath) {
+          console.log(`[helpers]     ️ 导航超时但 host 和路径正确，继续: ${currentUrl}`);
         } else if (round === 2) {
-          console.log(`[helpers]     ❌ 导航超时且 host 不匹配: ${page.url()}，终止`);
+          console.log(`[helpers]     ❌ 导航超时且 host 或路径不匹配: ${currentUrl}，终止`);
           return false;
         } else {
-          console.warn(`[helpers]     ⚠️ 导航超时且 host 不匹配，进入下一轮切换重试`);
+          console.warn(`[helpers]     ⚠️ 导航超时且 host 或路径不匹配，进入下一轮切换重试`);
           continue;
         }
       }
-      // 导航后若再次被 IP 跳转弹回（host 不符），进入下一轮重新切换
-      const afterNavHost = new URL(page.url()).hostname;
-      if (afterNavHost !== targetHost) {
-        console.warn(`[helpers]     ⚠️ 重新导航后再次被 IP 跳转: ${afterNavHost}，进入第${round + 1}轮商店切换重试`);
+      // 导航后若再次被 IP 跳转弹回（host 不符或缺少 /products/），进入下一轮重新切换
+      const afterNavUrl = page.url();
+      const afterNavHost = new URL(afterNavUrl).hostname;
+      const afterNavHasProductPath = afterNavUrl.includes('/products/');
+      if (afterNavHost !== targetHost || !afterNavHasProductPath) {
+        console.warn(`[helpers]     ⚠️ 重新导航后再次被 IP 跳转或路径不对: ${afterNavUrl}，进入第${round + 1}轮商店切换重试`);
         continue;
       }
       console.log(`[helpers]   ✅ 导航完成: ${page.url()}`);
@@ -657,33 +661,36 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
     }
   }
 
-  // 6. 最终验证（host 正确即视为成功，路径检查放宽）
+  // 6. 最终验证（host 正确 且 URL 包含 /products/ 才视为成功）
   const finalUrl = page.url();
   const finalHost = new URL(finalUrl).hostname;
+  const hasProductPath = finalUrl.includes('/products/');
 
-  console.log(`[helpers] 🔎 最终验证: host=${finalHost}, 目标=${targetHost}`);
-  if (finalHost === targetHost) {
+  console.log(`[helpers]  最终验证: host=${finalHost}, 目标=${targetHost}, 含/products/=${hasProductPath}`);
+  if (finalHost === targetHost && hasProductPath) {
     console.log(`[helpers] ✅✅✅ 页面初始化成功: ${finalUrl}`);
     return true;
   }
 
   // 7. 最终验证失败兜底：再走一轮商店切换 + 导航（此时切换 cookie 已存在，成功率高）
-  console.warn(`[helpers] ⚠️ 最终验证失败，执行兜底重试（商店切换 + 重新导航）`);
+  console.warn(`[helpers] ⚠️ 最终验证失败（host=${finalHost}, 含/products/=${hasProductPath}），执行兜底重试`);
   const retried = await switchToTargetStore(page, url);
   if (retried) {
     await page.waitForTimeout(3000);
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
     // 兜底导航后也可能触发 Cloudflare 验证
     await dismissCloudflareChallenge(page).catch(() => {});
-    const retryHost = new URL(page.url()).hostname;
-    if (retryHost === targetHost) {
+    const retryUrl = page.url();
+    const retryHost = new URL(retryUrl).hostname;
+    const retryHasProductPath = retryUrl.includes('/products/');
+    if (retryHost === targetHost && retryHasProductPath) {
       console.log(`[helpers]   🧹 关闭弹窗...`);
       await dismissAllPopups(page).catch(() => {});
-      console.log(`[helpers] ✅✅✅ 页面初始化成功（兜底重试）: ${page.url()}`);
+      console.log(`[helpers] ✅✅✅ 页面初始化成功（兜底重试）: ${retryUrl}`);
       return true;
     }
   }
-  console.log(`[helpers] ❌❌ 页面初始化失败: ${page.url()}，目标 host: ${targetHost}`);
+  console.log(`[helpers] ❌❌ 页面初始化失败: ${page.url()}，目标 host: ${targetHost}，期望含 /products/`);
   return false;
 }
 
