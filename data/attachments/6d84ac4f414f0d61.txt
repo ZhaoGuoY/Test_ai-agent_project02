@@ -1,0 +1,2 @@
+[helpers] ⚠️ 检测到 IP 跳转: www.makera.com → 尝试切换回目标
+[helpers]     ⚠️ 直接导航后 host 不符: www.makera.com

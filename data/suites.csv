@@ -1,0 +1,8 @@
+"DESCRIPTION","DURATION IN MS","NAME","PARENT SUITE","START TIME","STATUS","STOP TIME","SUB SUITE","SUITE","TEST CLASS","TEST METHOD"
+"","12463","商品正常进入结算页","chromium","2026-08-22","passed","2026-08-22","US 站点","smoke/us_carvera.spec.ts","",""
+"","68294","商品加入购物车","chromium","2026-08-22","passed","2026-08-22","US 站点","smoke/us_carvera.spec.ts","",""
+"","1","商品正常进入结算页","chromium","2026-08-21","skipped","2026-08-21","EU 站点","smoke/eu_carvera.spec.ts","",""
+"","9885","商品正常进入结算页","chromium","2026-08-22","passed","2026-08-22","EU 站点","smoke/eu_carvera.spec.ts","",""
+"","49210","商品加入购物车","chromium","2026-08-21","passed","2026-08-22","EU 站点","smoke/eu_carvera.spec.ts","",""
+"","1","商品正常进入结算页","chromium","2026-08-22","skipped","2026-08-22","Global 站点","smoke/global_carvera.spec.ts","",""
+"","62220","商品加入购物车","chromium","2026-08-22","failed","2026-08-22","Global 站点","smoke/global_carvera.spec.ts","",""

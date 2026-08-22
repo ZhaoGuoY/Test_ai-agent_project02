@@ -1,0 +1,58 @@
+[helpers] 🔄 正在导航到: https://www.makera.com/products/carvera
+[helpers] ✅ 导航完成，当前 URL: https://www.makera.com/products/carvera
+[helpers]   🔄 检查 Cloudflare 真人验证...
+[helpers]   ℹ️ 未检测到 Cloudflare 验证页
+[helpers] 📊 跳转检测 1/20（2s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 2/20（4s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 3/20（6s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 4/20（8s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 5/20（10s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 6/20（12s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 7/20（14s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 8/20（16s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 9/20（18s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 10/20（20s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 11/20（22s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 12/20（24s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 13/20（26s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 14/20（28s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 15/20（30s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 16/20（32s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 17/20（34s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 18/20（36s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 19/20（38s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] 📊 跳转检测 20/20（40s / 40s）: 目标=www.makera.com, 当前=www.makera.com
+[helpers] ✅ 40 秒内未检测到跳转，进入测试
+[helpers]  🧹 开始关闭所有弹窗...
+[helpers]   🔄 检查幸运转盘...
+[helpers]   ✅ 已关闭幸运转盘（选择器: button.ecomsend-SpinWheel__Modal__CloseButton）
+[helpers]   🔄 检查新手引导弹窗(New to CNC)...
+[helpers]   ℹ️ 未发现新手引导弹窗
+[helpers]   🔄 检查 Google 翻译弹窗...
+[helpers]   ✅ 已暴力移除 Google 翻译弹窗
+[helpers]   🔄 检查客服悬浮按钮...
+[helpers]   ✅ 客服悬浮按钮处理完成
+[helpers]   🔄 检查顶部导航下拉...
+[helpers]   ✅ 顶部导航下拉处理完成
+[helpers]  🧹 弹窗处理完成
+[helpers]  最终验证: host=www.makera.com, 目标=www.makera.com, 含/products/=true
+[helpers] ✅✅✅ 页面初始化成功: https://www.makera.com/products/carvera
+[helpers]   ℹ️ 新手引导弹窗不存在，无需循环关闭
+[US] ✅ Add to cart 按钮可见（弹窗已清理: true），准备点击加购
+[helpers]   ℹ️ 新手引导弹窗不存在，无需循环关闭
+[helpers]   ℹ️ 新手引导弹窗不存在，无需循环关闭
+[helpers]  🧹 开始关闭所有弹窗...
+[helpers]   🔄 检查幸运转盘...
+[helpers]   ℹ️ 未发现幸运转盘
+[helpers]   🔄 检查新手引导弹窗(New to CNC)...
+[helpers]   ℹ️ 未发现新手引导弹窗
+[helpers]   🔄 检查 Google 翻译弹窗...
+[helpers]   ✅ 已暴力移除 Google 翻译弹窗
+[helpers]   🔄 检查客服悬浮按钮...
+[helpers]   ✅ 客服悬浮按钮处理完成
+[helpers]   🔄 检查顶部导航下拉...
+[helpers]   ✅ 顶部导航下拉处理完成
+[helpers]  🧹 弹窗处理完成
+[US] 🛒 已点击 Add to cart，等待购物车抽屉弹出...
+[US] ✅ 购物车抽屉已弹出
+[US] ✅ 购物车中存在目标商品: Carvera Desktop CNC Machine

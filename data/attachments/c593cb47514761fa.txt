@@ -1,0 +1,2 @@
+[helpers] ⚠️ 检测到 IP 跳转: www.makera.com → 尝试切换回目标
+[helpers] ⚠️ 最终验证失败（host=www.makera.com, 含/products/=false），执行兜底重试
