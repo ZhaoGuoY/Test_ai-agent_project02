@@ -9,6 +9,7 @@ Web Monitor 主入口（增量3：Agent 驱动版）
 
 执行方式：python scripts/run_monitor.py
 """
+import shutil
 import sys
 from pathlib import Path
 
@@ -21,11 +22,42 @@ from src.app.agents.base_agent import create_agent
 
 logger = get_logger(__name__)
 
+# 每次执行前需清理的旧产物目录（均为当次运行重新生成的临时文件）
+_STALE_ARTIFACT_DIRS = [
+    "workspace/allure-report",
+    "workspace/allure-results",
+    "workspace/allure-heal-results",
+    "workspace/test-results",
+    "workspace/logs",
+]
+
+
+def cleanup_stale_artifacts() -> None:
+    """清理上次执行遗留的测试产物，避免旧数据干扰当次运行。
+
+    这些目录每次执行都会全量重新生成，本地无需跨次保留：
+    - allure-report: Allure 静态报告（由 allure generate 生成）
+    - allure-results: Playwright allure 插件写入的原始结果
+    - allure-heal-results: 自愈重跑的 allure 结果
+    - test-results: JUnit XML / HTML 报告 / 失败截图录屏
+    - logs: 上一轮的 monitor.log
+    CI 侧已通过 upload-artifact 和 gh-pages 部署独立管理产物，
+    本地残留仅会浪费磁盘并误导排查。
+    """
+    for rel_path in _STALE_ARTIFACT_DIRS:
+        target = PROJECT_ROOT / rel_path
+        if target.exists():
+            shutil.rmtree(target, ignore_errors=True)
+            logger.info(f"已清理旧产物: {rel_path}")
+
 
 def main():
     logger.info("=" * 55)
     logger.info("Web Monitor 增量3 - Agent 自主编排")
     logger.info("=" * 55)
+
+    # 0. 清理上次执行遗留的测试产物（每次全量重新生成，无需跨次保留）
+    cleanup_stale_artifacts()
 
     # 1. 加载配置
     try:
