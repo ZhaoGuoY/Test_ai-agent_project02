@@ -5,11 +5,10 @@ import { test as base, expect, Page } from '@playwright/test';
 import { parameter } from 'allure-js-commons';
 import { setupPage, dismissAllPopups, addToCartViaApi, dismissCloudflareChallenge } from './helpers';
 
-const TARGET_URL = 'https://global.makera.com/products/makera-z1-desktop-cnc';
+const TARGET_URL = 'https://global.makera.com/products/makera-3d-wired-probe';
 // 目标商品名称（断言购物车与结算页中商品存在的基准文本；
-// 实际标题为 "Makera Z1 Desktop CNC [Pre-order]"，getByRole/getByText 默认子串匹配，
-// 基准文本不含后缀可兼容购物车/结算页是否展示 [Pre-order] 的两种形态）
-const PRODUCT_NAME = 'Makera Z1 Desktop CNC';
+// getByRole/getByText 默认子串匹配，基准文本不含后缀可兼容购物车/结算页的两种形态）
+const PRODUCT_NAME = 'Makera 3D Wired Probe';
 const REGION = '东京 / ja-JP / Asia/Tokyo';
 
 // worker 级共享页面：两个用例使用同一个浏览器页面，
