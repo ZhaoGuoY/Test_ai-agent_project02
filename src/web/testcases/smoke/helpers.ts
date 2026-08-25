@@ -580,11 +580,16 @@ export async function dismissCloudflareChallenge(page: Page, maxWaitMs = 30000):
 
 /**
  * 页面初始化：导航 → 循环检测跳转 → 循环切换商店 → 验证
+ *
+ * 增强策略（云端 IP 跳转防护）：
+ * - 跳转检测窗口从 40s 延长到 60s，覆盖慢速重定向场景。
+ * - 最终验证同时检查 host 和 /products/ 路径。
+ * - 检测到跳转后通过商店切换器切回目标站点，最多重试 2 轮。
  */
 export async function setupPage(page: Page, url: string): Promise<boolean> {
   const targetHost = new URL(url).hostname;
 
-  // 1. 导航到目标 URL
+  // 1. 导航到目标 URL（允许服务端重定向，后续通过跳转检测+商店切换纠正）
   console.log(`[helpers] 🔄 正在导航到: ${url}`);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 180000 });
   console.log(`[helpers] ✅ 导航完成，当前 URL: ${page.url()}`);
@@ -595,11 +600,11 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
     console.warn(`[helpers] ⚠️ Cloudflare 验证未通过，后续测试可能受影响`);
   }
 
-  // 2. 立即开始循环检测跳转（每 2 秒一次，共 40 秒）
+  // 2. 循环检测跳转（每 2 秒一次，共 60 秒，从 40s 延长以覆盖慢速重定向）
   let redirectDetected = false;
-  for (let i = 1; i <= 20; i++) {
+  for (let i = 1; i <= 30; i++) {
     const currentHost = new URL(page.url()).hostname;
-    console.log(`[helpers] 📊 跳转检测 ${i}/20（${i * 2}s / 40s）: 目标=${targetHost}, 当前=${currentHost}`);
+    console.log(`[helpers] 📊 跳转检测 ${i}/30（${i * 2}s / 60s）: 目标=${targetHost}, 当前=${currentHost}`);
 
     if (currentHost !== targetHost) {
       console.warn(`[helpers] ⚠️ 检测到 IP 跳转: ${currentHost} → 尝试切换回目标`);
@@ -612,7 +617,7 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
 
   // 3. 如果未检测到跳转，关闭弹窗后直接进入测试
   if (!redirectDetected) {
-    console.log(`[helpers] ✅ 40 秒内未检测到跳转，进入测试`);
+    console.log(`[helpers] ✅ 60 秒内未检测到跳转，进入测试`);
     // 关闭弹窗（无论成功与否都继续测试）
     try {
       await dismissAllPopups(page);
@@ -633,7 +638,7 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
         if (round === 2) {
           // 商店切换器完全失败时，尝试直接导航到目标 URL（带缓存破坏参数）
           // 有时 Shopify 的地域 cookie 已在切换过程中设置，直接导航可能成功
-          console.warn(`[helpers] ⚠️ 商店切换器失败，尝试直接导航兜底...`);
+          console.warn(`[helpers] ️ 商店切换器失败，尝试直接导航兜底...`);
           const cacheBustUrl = `${url}?_t=${Date.now()}`;
           try {
             await page.goto(cacheBustUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -672,7 +677,7 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
           console.log(`[helpers]     ❌ 导航超时且 host 或路径不匹配: ${currentUrl}，终止`);
           return false;
         } else {
-          console.warn(`[helpers]     ⚠️ 导航超时且 host 或路径不匹配，进入下一轮切换重试`);
+          console.warn(`[helpers]     ️ 导航超时且 host 或路径不匹配，进入下一轮切换重试`);
           continue;
         }
       }
@@ -696,7 +701,7 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
     }
   }
 
-  // 6. 最终验证（host 正确 且 URL 包含 /products/ 才视为成功）
+  // 5. 最终验证（host 正确 且 URL 包含 /products/ 才视为成功）
   const finalUrl = page.url();
   const finalHost = new URL(finalUrl).hostname;
   const hasProductPath = finalUrl.includes('/products/');
@@ -707,7 +712,7 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
     return true;
   }
 
-  // 7. 最终验证失败兜底：再走一轮商店切换 + 导航（此时切换 cookie 已存在，成功率高）
+  // 6. 最终验证失败兜底：再走一轮商店切换 + 导航（此时切换 cookie 已存在，成功率高）
   console.warn(`[helpers] ⚠️ 最终验证失败（host=${finalHost}, 含/products/=${hasProductPath}），执行兜底重试`);
   const retried = await switchToTargetStore(page, url);
   if (retried) {

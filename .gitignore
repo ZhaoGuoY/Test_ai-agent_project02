@@ -7,6 +7,8 @@ node_modules/
 __pycache__/
 # Python 编译后的文件（.pyc/.pyo/.pyd）
 *.py[cod]
+# Playwright 浏览器安装目录（通过 PLAYWRIGHT_BROWSERS_PATH 配置）
+.browsers/
 
 # ====================== 2. 测试产物 ======================
 # Playwright 默认失败产物目录（保险条目，正常已收敛到 workspace 下）

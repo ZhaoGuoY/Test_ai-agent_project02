@@ -76,6 +76,16 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
     trace: 'retain-on-failure',
+
+    // 浏览器启动参数：优化磁盘使用和性能
+    launchOptions: {
+      // 禁用 DevTools、禁用扩展，减少资源占用
+      args: [
+        '--disable-dev-shm-usage',  // 禁用 /dev/shm，避免内存不足
+        '--disable-gpu',            // 禁用 GPU 加速（无头模式不需要）
+        '--no-sandbox',             // 禁用沙箱（CI 环境需要）
+      ],
+    },
   },
 
   // 浏览器项目配置
