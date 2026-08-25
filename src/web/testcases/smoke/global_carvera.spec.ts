@@ -49,6 +49,18 @@ test.describe('Global 站点', () => {
       const ready = await setupPage(page, TARGET_URL);
       // setup 失败视为测试失败（触发自愈），不允许跳过
       expect(ready).toBe(true);
+
+      // 重定向恢复检查：setupPage 成功后，页面仍可能被延迟 IP 重定向弹走
+      // （如数据中心 IP 访问 global.makera.com 被 302 回 www.makera.com）
+      // 在 URL 断言前再次验证 host，若不符则重新执行 setupPage 纠正
+      const targetHostForCheck = new URL(TARGET_URL).hostname;
+      const currentHostBeforeAssert = new URL(page.url()).hostname;
+      if (currentHostBeforeAssert !== targetHostForCheck) {
+        console.warn(`[Global] ⚠️ setupPage 后检测到延迟 IP 重定向: ${currentHostBeforeAssert} → 重新执行 setupPage 纠正`);
+        const reReady = await setupPage(page, TARGET_URL);
+        expect(reReady).toBe(true);
+      }
+
       // 验证 URL 包含 /products/（URL 字符串断言）
       expect(page.url()).toContain('/products/');
     });
