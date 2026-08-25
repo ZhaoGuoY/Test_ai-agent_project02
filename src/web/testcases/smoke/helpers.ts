@@ -311,7 +311,12 @@ async function switchToTargetStore(page: Page, targetUrl: string): Promise<boole
     ? ['EU', 'Europe', 'EU Store', 'European Union']
     : currentHost.includes('global')
     ? ['Global', 'Global Store', 'International', 'Rest of World']
-    : ['United States (EN)', 'US', 'US Store', 'United States', 'America'];
+    : [
+        // www.makera.com 可能被重定向到任意地区，需要覆盖所有可能的按钮文本
+        'United States (EN)', 'US', 'US Store', 'United States', 'America',
+        'Global', 'Global Store', 'International', 'Rest of World',
+        'EU', 'Europe', 'EU Store', 'European Union'
+      ];
   console.log(`[helpers]   ⏱️ 开始查找切换按钮（超时 30s）...`);
 
   // 循环查找切换按钮（超时 30 秒，每 2 秒重试）
@@ -477,9 +482,9 @@ async function switchToTargetStore(page: Page, targetUrl: string): Promise<boole
           console.log(`[helpers]     ⚠️ 第${attempt}次点击后 URL 未变化: ${afterClickHost}，重试...`);
         }
       }
-    
+
       if (navigationSuccess) return true;
-    
+
       // 3 次点击后仍未跳转，最后用 waitForURL 等 10s
       try {
         await page.waitForURL((url) => url.hostname === targetHost, { timeout: 10000 });
@@ -589,7 +594,7 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
   if (!cfPassed) {
     console.warn(`[helpers] ⚠️ Cloudflare 验证未通过，后续测试可能受影响`);
   }
-  
+
   // 2. 立即开始循环检测跳转（每 2 秒一次，共 40 秒）
   let redirectDetected = false;
   for (let i = 1; i <= 20; i++) {

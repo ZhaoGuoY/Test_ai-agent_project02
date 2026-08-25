@@ -21,7 +21,13 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import { setupPage } from '../testcases/smoke/helpers';
 
-const DEFAULT_SPEC_PATH = path.resolve(__dirname, '../testcases/smoke/generated_homepage.spec.ts');
+// 默认 spec 路径：动态查找 smoke 目录下首个 .spec.ts 文件，
+// 不再硬编码不存在的 generated_homepage.spec.ts
+const SMOKE_DIR = path.resolve(__dirname, '../testcases/smoke');
+const DEFAULT_SPEC_PATH = (() => {
+  const files = fs.readdirSync(SMOKE_DIR).filter(f => f.endsWith('.spec.ts'));
+  return files.length > 0 ? path.join(SMOKE_DIR, files[0]) : '';
+})();
 const TIMEOUT = 25000; // 25秒
 
 interface ElementInfo {

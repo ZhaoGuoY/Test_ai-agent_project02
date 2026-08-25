@@ -47,35 +47,53 @@ class HealAgent(BaseAgent):
 
     def _resolve_spec_from_classname(self, classname: str) -> Path:
         """
-        从 JUnit classname 解析出对应站点的 spec 文件路径
+        从 JUnit classname 解析出对应的 spec 文件路径
 
         classname 格式: src.web.testcases.smoke.us_carvera.spec
-        提取文件名: us_carvera.spec.ts
+                     或: src.web.testcases.smoke.auth0_login.spec
+        策略：优先精确匹配 classname 末段对应的 .spec.ts 文件，
+        再回退到 _carvera 模式匹配，最终回退到遍历 spec_dir 查找。
         """
         spec_dir = self.project_root / "src" / "web" / "testcases" / "smoke"
-        # 从 classname 最后一段提取文件名（如 us_carvera.spec → us_carvera.spec.ts）
+        # 1. 从 classname 末段提取文件名（如 auth0_login.spec → auth0_login.spec.ts）
         parts = classname.replace(".", "/").split("/")
-        # 找到包含 "_carvera" 的部分
+        last_part = parts[-1] if parts else ""
+        if last_part:
+            filename = last_part if last_part.endswith(".ts") else last_part + ".ts"
+            spec_path = spec_dir / filename
+            if spec_path.exists():
+                return spec_path
+        # 2. 兼容旧格式：查找含 "_carvera" 的文件
         for part in parts:
             if "_carvera" in part:
                 filename = part if part.endswith(".ts") else part + ".ts"
                 spec_path = spec_dir / filename
                 if spec_path.exists():
                     return spec_path
-        # 回退：遍历目录查找匹配的 spec 文件
-        for f in spec_dir.glob("*_carvera.spec.ts"):
+        # 3. 最终回退：遍历 spec_dir 查找 classname 中包含的 spec 文件
+        for f in spec_dir.glob("*.spec.ts"):
             if f.stem.replace(".spec", "") in classname:
                 return f
-        # 最终回退：返回默认文件（兼容旧格式）
-        return spec_dir / "generated_homepage.spec.ts"
+        # 4. 兜底：返回第一个 spec 文件（不再硬编码不存在的 generated_homepage）
+        specs = list(spec_dir.glob("*.spec.ts"))
+        if specs:
+            logger.warning(f"[heal] 无法从 classname '{classname}' 精确定位 spec，使用首个: {specs[0].name}")
+            return specs[0]
+        raise FileNotFoundError(f"spec 目录中未找到任何 .spec.ts 文件: {spec_dir}")
 
     def _resolve_url_from_classname(self, classname: str) -> str:
         """
         从 classname 推断站点名，匹配配置中的目标 URL
 
         如 classname 含 "us_" → 查找 sites 中 name=US 的 url
+        auth0_login 固定使用 US 站点 URL（登录页面向往 USA Store）
         """
         classname_lower = classname.lower()
+        # auth0_login 固定映射到 US 站点（登录页面为 Makera USA Store）
+        if "auth0" in classname_lower or "auth0_login" in classname_lower:
+            for site in self.target_sites:
+                if site["name"].upper() == "US":
+                    return site["url"]
         for site in self.target_sites:
             site_key = site["name"].lower()
             if site_key in classname_lower:
@@ -152,8 +170,19 @@ class HealAgent(BaseAgent):
             if classname:
                 target_spec = self._resolve_spec_from_classname(classname)
             else:
-                # 无 classname 时回退：遍历查找
-                target_spec = spec_dir / "generated_homepage.spec.ts"
+                # 无 classname 时：遍历 spec_dir 查找包含 failed_test_name 的 spec 文件
+                target_spec = None
+                for f in spec_dir.glob("*.spec.ts"):
+                    if f.stem.replace(".spec", "") in failed_test_name:
+                        target_spec = f
+                        break
+                if not target_spec:
+                    specs = list(spec_dir.glob("*.spec.ts"))
+                    target_spec = specs[0] if specs else None
+                if target_spec:
+                    logger.info(f"[工具] 无 classname，自动定位 spec: {target_spec.name}")
+            if not target_spec:
+                return "❌ 无法定位 spec 文件，请检查 classname 或 spec 目录"
             logger.info(f"[工具] 目标 spec 文件: {target_spec}")
 
             script_path = self.project_root / "src" / "web" / "scripts_B" / "heal_specs.ts"
@@ -314,15 +343,24 @@ class HealAgent(BaseAgent):
         """
         构建站点→URL→spec 映射表（供 system prompt 使用）
 
-        Returns:
-            格式化的站点映射字符串
+        动态扫描 spec 目录，将站点名与实际存在的 spec 文件匹配，
+        不再硬编码 _carvera 后缀。
         """
+        spec_dir = self.project_root / "src" / "web" / "testcases" / "smoke"
+        all_specs = {f.stem.replace(".spec", ""): f.name for f in spec_dir.glob("*.spec.ts")}
         lines = []
         for site in self.target_sites:
             name = site.get("name", "unknown")
             url = site.get("url", "")
-            filename = f"{name.lower()}_carvera.spec.ts"
+            # 优先匹配 name_carvera，其次匹配 name，最后取首个 spec
+            key = f"{name.lower()}_carvera"
+            filename = all_specs.get(key) or all_specs.get(name.lower()) or (list(all_specs.values())[0] if all_specs else "unknown.spec.ts")
             lines.append(f"  - {name}: url={url}, spec={filename}")
+        # 额外列出非站点 spec 文件（如 auth0_login）
+        site_keys = {f"{s['name'].lower()}_carvera" for s in self.target_sites} | {s["name"].lower() for s in self.target_sites}
+        for key, fname in all_specs.items():
+            if key not in site_keys:
+                lines.append(f"  - {key}: spec={fname}（非站点用例，需人工指定 URL）")
         return "\n".join(lines)
 
     def build_system_prompt(self) -> str:
@@ -366,10 +404,11 @@ class HealAgent(BaseAgent):
    - error_message: 失败用例的 message 字段
    - classname: 失败用例的 classname 字段（用于自动定位 spec 文件）
 5. **所有失败用例修复完成后，只调用一次** `run_tests_and_get_failures(spec_file="站点spec文件名")` 验证
-   - ⚠️ **每个重试周期内绝对只允许调用一次 run_tests_and_get_failures**
+   - ️ **每个重试周期内绝对只允许调用一次 run_tests_and_get_failures**
    - 如 classname 含 "eu_" → spec_file="eu_carvera.spec.ts"
    - 如 classname 含 "us_" → spec_file="us_carvera.spec.ts"
    - 如 classname 含 "global_" → spec_file="global_carvera.spec.ts"
+   - 如 classname 含 "auth0" → spec_file="auth0_login.spec.ts"
 6. 调用 `check_if_all_passed` 检查是否全部通过
 7. 如果仍有失败且重试次数 < {self.MAX_RETRIES}，**只对新 failures 数组中的用例**继续修复
 8. 达到最大重试次数后，无论是否全部通过，返回最终结果
@@ -379,13 +418,14 @@ class HealAgent(BaseAgent):
 2. 调用 `get_current_failures` 获取初始失败列表
 3. 如果列表为空，直接报告"无需修复，全部通过"
 4. **批量修复所有失败用例**：对 failures 数组中的每个用例调用 `heal_single_case`（不要修一个就跑一次测试！）
-   - 从 classname 判断站点（如含 "us_" → US，含 "eu_" → EU，含 "global_" → Global）
+   - 从 classname 判断站点（如含 "us_" → US，含 "eu_" → EU，含 "global_" → Global，含 "auth0" → auth0_login.spec.ts）
    - 从上方映射表获取对应 URL
    - 务必传入 classname 参数
    - **根据错误分析中的建议修改代码**（如添加 dismissSpinPopup、使用 force: true 等）
 5. **批量修复完成后，只调用一次** `run_tests_and_get_failures(spec_file="对应站点的spec文件名")` 验证
    - ⚠️ **每个重试周期内绝对只允许调用一次 run_tests_and_get_failures**
    - 环境类失败不修改代码也返回 ✅，同样必须重跑验证
+   - 如 classname 含 "auth0" → spec_file="auth0_login.spec.ts"
 6. 调用 `check_if_all_passed` 判断结果
 7. 如果还有失败且重试次数 < {self.MAX_RETRIES}，回到步骤4
 8. 达到最大重试次数后，报告最终状态
