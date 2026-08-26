@@ -34,8 +34,9 @@ export default defineConfig({
   outputDir: 'workspace/test-results/artifacts',
 
   // 超时设置（毫秒）— Makera 网站加载较慢，适当放宽
-  // 全局超时：整个测试套件最长 15 分钟，防止单个用例卡死导致无限等待
-  globalTimeout: 15 * 60 * 1000,
+  // 全局超时：动态计算，单轮约 12min × (retries+1) + 20% 余量
+  // CI: 12×3×1.2 ≈ 43min；本地: 12×1×1.2 ≈ 15min
+  globalTimeout: process.env.CI ? 45 * 60 * 1000 : 15 * 60 * 1000,
   // 单用例超时：150s，基于最长用例结算页流程(112s)留 30% 余量
   timeout: 150_000,
   expect: { timeout: 15_000 },
@@ -47,7 +48,8 @@ export default defineConfig({
   workers: 1,
 
   // CI 环境下重试次数（本地不重试）
-  retries: process.env.CI ? 2 : 0,
+  // Playwright 原生重试：失败后重新执行同一测试文件，不修改代码
+  retries: process.env.CI ? 3 : 0,
 
   // 报告器配置：同时使用 list（终端）+ junit（XML）+ html（网页报告）+ allure（详细报告）
   // junit.xml 供后续 Python 解析并推送飞书

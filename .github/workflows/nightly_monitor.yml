@@ -75,12 +75,11 @@ jobs:
       - name: Verify Playwright installation
         run: npx playwright --version
 
-      # 8. 运行主监控脚本
-      #    注意：脚本会调用 LLM API，需要网络连通
-      - name: Run Web Monitor
-        id: run_monitor
-        run: python scripts/run_monitor.py
-        # 即使脚本返回非零退出码，也继续执行后续步骤（上传 artifact）
+      # 8. 运行测试（只重试不修改脚本）
+      #    使用 Playwright 原生 retries=3，不调用自愈逻辑
+      - name: Run Playwright Tests (retry only)
+        id: run_tests
+        run: npx playwright test --retries=3
         continue-on-error: true
         env:
           # 飞书卡片"查看详细测试报告"按钮指向的 GitHub Pages 报告地址
