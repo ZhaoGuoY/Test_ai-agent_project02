@@ -18,7 +18,7 @@ import { Page } from '@playwright/test';
 /**
  * 关闭幸运转盘弹窗（精准选择器，仅针对幸运转盘，不影响切换弹窗）
  */
-async function dismissSpinPopup(page: Page): Promise<void> {
+export async function dismissSpinPopup(page: Page): Promise<void> {
   console.log(`[helpers]   🔄 检查幸运转盘...`);
   // 安全方式：点击关闭按钮，不使用 JS 暴力隐藏
   const closeSelectors = [

@@ -221,6 +221,13 @@ class FeishuNotifier:
                     "tag": "hr"
                 },
                 {
+                    "tag": "div",
+                    "text": {
+                        "content": "**测试用例**\n1. auth0登录\n2. 美国站（加购功能，进入结算页回显）\n3. 欧洲站（加购功能，进入结算页回显）\n4. 全球站（加购功能，进入结算页回显）",
+                        "tag": "lark_md"
+                    }
+                },
+                {
                     "tag": "note",
                     "elements": [
                         {

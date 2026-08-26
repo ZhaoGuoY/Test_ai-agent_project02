@@ -20,8 +20,13 @@
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-  // 测试文件目录：所有 .spec.ts 文件存放位置
-  testDir: './src/web/testcases',
+  // 测试文件目录：通过 TEST_DIR 环境变量切换执行范围
+  // - 不设置或 TEST_DIR=smoke  → 执行全量用例（src/web/testcases/smoke/）
+  // - TEST_DIR=debug          → 仅执行调试用例（src/web/testcases/debug/）
+  // 用法：
+  //   Linux/macOS: TEST_DIR=debug npx playwright test
+  //   PowerShell:  $env:TEST_DIR="debug"; npx playwright test
+  testDir: `./src/web/testcases/${process.env.TEST_DIR || 'smoke'}`,
 
   // 失败产物输出目录（截图/录屏/trace/.last-run.json）：
   // 统一收敛到 workspace 下（已被 .gitignore 忽略且 CI 会上传），
