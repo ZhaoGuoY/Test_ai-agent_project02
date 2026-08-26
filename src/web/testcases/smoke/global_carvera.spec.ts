@@ -57,18 +57,10 @@ test.describe('Global 站点', () => {
       const currentHostBeforeAssert = new URL(currentUrlBeforeAssert).hostname;
       const hasProductPath = currentUrlBeforeAssert.includes('/products/');
       if (currentHostBeforeAssert !== targetHostForCheck || !hasProductPath) {
-        console.warn(`[Global] ⚠️ setupPage 后检测到延迟重定向: ${currentUrlBeforeAssert} → 重新执行 setupPage 纠正`);
+        console.warn(`[Global] ⚠️ setupPage 后检测到延迟重定向: ${currentUrlBeforeAssert} → 重新执行 setupPage 纠正（最多 1 次）`);
         const reReady = await setupPage(page, TARGET_URL);
         expect(reReady).toBe(true);
-      }
-
-      // 最终断言前再检查一次 URL，防止二次重定向
-      const finalCheckUrl = page.url();
-      const finalCheckHasProductPath = finalCheckUrl.includes('/products/');
-      if (!finalCheckHasProductPath) {
-        console.warn(`[Global] ⚠️ 最终断言前再次检测到重定向: ${finalCheckUrl} → 重新执行 setupPage 纠正`);
-        const reReady2 = await setupPage(page, TARGET_URL);
-        expect(reReady2).toBe(true);
+        // 不再进行二次检查，避免无限循环：setupPage 内部已有完整兜底机制
       }
 
       // 验证 URL 包含 /products/（URL 字符串断言）

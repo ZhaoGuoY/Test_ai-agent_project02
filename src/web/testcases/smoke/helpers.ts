@@ -436,51 +436,33 @@ async function switchToTargetStore(page: Page, targetUrl: string): Promise<boole
 
       let navigationSuccess = false;
 
-      // 优先策略：navLink 自带 data-destination 目标 URL，且该元素默认隐藏、
-      // 仅在 hover 时渲染（曾导致 locator.click: Element is not visible，
-      // Playwright 在点击瞬间仍会校验可见性，force 也无法绕过），
-      // 因此直接读取目标 URL 导航，最可靠地绕开点击可见性问题
-      const destination = await storeOption.getAttribute('data-destination').catch(() => null);
-      if (destination && new URL(destination).hostname === targetHost) {
-        console.log(`[helpers]     🔗 读取到 data-destination，直接导航: ${destination}`);
-        try {
-          await page.goto(destination, { waitUntil: 'domcontentloaded', timeout: 60000 });
-          const afterGotoHost = new URL(page.url()).hostname;
-          if (afterGotoHost === targetHost) {
-            console.log(`[helpers] ✅ 商店切换成功（直接导航），URL: ${page.url()}`);
-            navigationSuccess = true;
-          } else {
-            console.warn(`[helpers]     ⚠️ 直接导航后 host 不符: ${afterGotoHost}`);
-          }
-        } catch (gotoErr) {
-          console.warn(`[helpers]     ⚠️ 直接导航失败，回退点击方式: ${gotoErr}`);
-        }
-      }
+      // 禁用直接导航策略：data-destination 方式不会改变浏览器 IP，
+      // Shopify 服务端检测到是 US IP 会把 global.makera.com 重定向回 www.makera.com
+      // 必须通过真实点击触发 JS 切换逻辑，让服务器端记录地域偏好 cookie
+      console.log(`[helpers]     ⚠️ 跳过 data-destination 直接导航（会导致 IP 不匹配被重定向）`);
 
       // 回退策略：JS 派发 click（不受可见性限制）+ 常规点击重试，最多 3 次
-      if (!navigationSuccess) {
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          console.log(`[helpers]     🔄 第${attempt}次点击商店选项...`);
-          if (attempt % 2 === 1) {
-            // JS click：元素已定位但隐藏/被遮挡时依然可触发其点击事件
-            await storeOption.evaluate((el) => (el as HTMLElement).click()).catch(() => {});
-          } else {
-            await storeOption.click({ timeout: 5000 }).catch(() => {});
-          }
-          await page.waitForTimeout(500);
-          // 点击后立即关闭可能重新出现的幸运转盘
-          await dismissSpinPopup(page);
-
-          // 检查 URL 是否已变化
-          const afterClickUrl = page.url();
-          const afterClickHost = new URL(afterClickUrl).hostname;
-          if (afterClickHost === targetHost) {
-            console.log(`[helpers] ✅ 商店切换成功，URL: ${afterClickUrl}`);
-            navigationSuccess = true;
-            break;
-          }
-          console.log(`[helpers]     ⚠️ 第${attempt}次点击后 URL 未变化: ${afterClickHost}，重试...`);
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        console.log(`[helpers]     🔄 第${attempt}次点击商店选项...`);
+        if (attempt % 2 === 1) {
+          // JS click：元素已定位但隐藏/被遮挡时依然可触发其点击事件
+          await storeOption.evaluate((el) => (el as HTMLElement).click()).catch(() => {});
+        } else {
+          await storeOption.click({ timeout: 5000 }).catch(() => {});
         }
+        await page.waitForTimeout(500);
+        // 点击后立即关闭可能重新出现的幸运转盘
+        await dismissSpinPopup(page);
+
+        // 检查 URL 是否已变化
+        const afterClickUrl = page.url();
+        const afterClickHost = new URL(afterClickUrl).hostname;
+        if (afterClickHost === targetHost) {
+          console.log(`[helpers] ✅ 商店切换成功，URL: ${afterClickUrl}`);
+          navigationSuccess = true;
+          break;
+        }
+        console.log(`[helpers]     ⚠️ 第${attempt}次点击后 URL 未变化: ${afterClickHost}，重试...`);
       }
 
       if (navigationSuccess) return true;
@@ -497,7 +479,7 @@ async function switchToTargetStore(page: Page, targetUrl: string): Promise<boole
           console.log(`[helpers] ✅ 商店切换成功（超时后确认），URL: ${currentUrl}`);
           return true;
         }
-        console.error(`[helpers] ❌ 切换后 URL 未匹配目标: ${targetHost}，当前: ${currentUrl}`);
+        console.error(`[helpers]  切换后 URL 未匹配目标: ${targetHost}，当前: ${currentUrl}`);
         return false;
       }
     }
