@@ -47,6 +47,20 @@ test.describe('EU 站点', () => {
       const ready = await setupPage(page, TARGET_URL);
       // setup 失败视为测试失败（触发自愈），不允许跳过
       expect(ready).toBe(true);
+
+      // 重定向恢复检查：setupPage 成功后，页面仍可能被延迟 JS 重定向弹走
+      // 先等待 8s 让延迟重定向有时间触发，再检查 host 和 /products/ 路径
+      await page.waitForTimeout(8000);
+      const targetHostForCheck = new URL(TARGET_URL).hostname;
+      const currentUrlBeforeAssert = page.url();
+      const currentHostBeforeAssert = new URL(currentUrlBeforeAssert).hostname;
+      const hasProductPath = currentUrlBeforeAssert.includes('/products/');
+      if (currentHostBeforeAssert !== targetHostForCheck || !hasProductPath) {
+        console.warn(`[EU] ⚠️ setupPage 后检测到延迟重定向: ${currentUrlBeforeAssert} → 重新执行 setupPage 纠正`);
+        const reReady = await setupPage(page, TARGET_URL);
+        expect(reReady).toBe(true);
+      }
+
       // 验证 URL 包含 /products/（URL 字符串断言）
       expect(page.url()).toContain('/products/');
     });

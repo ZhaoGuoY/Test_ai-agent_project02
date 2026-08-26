@@ -701,6 +701,19 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
     }
   }
 
+  // 4.5 稳定化等待：setupPage 的 60s 跳转检测窗口结束后，延迟 JS 重定向可能才触发
+  // （如页面 JS 在 DOMContentLoaded 后 60-90s 触发地域重定向）
+  // 等待 10s 让延迟重定向有时间触发，最终验证才能捕获
+  if (!redirectDetected) {
+    console.log(`[helpers]   ⏳ 等待 10s 稳定化，检测延迟重定向...`);
+    await page.waitForTimeout(10000);
+    const postStabilizationHost = new URL(page.url()).hostname;
+    if (postStabilizationHost !== targetHost) {
+      console.warn(`[helpers] ⚠️ 稳定化等待期间检测到延迟重定向: ${postStabilizationHost}，进入商店切换`);
+      redirectDetected = true;
+    }
+  }
+
   // 5. 最终验证（host 正确 且 URL 包含 /products/ 才视为成功）
   const finalUrl = page.url();
   const finalHost = new URL(finalUrl).hostname;

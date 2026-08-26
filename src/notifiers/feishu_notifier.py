@@ -84,6 +84,9 @@ class FeishuNotifier:
         # 计算通过数 = 总数 - 失败 - 错误 - 跳过
         passed = tests - failures - errors - skipped
 
+        # 有效失败数（skipped 通常由前置用例失败导致，视为失败）
+        effective_failures = failures + errors + skipped
+
         # 按站点分组统计（从 testcase name 提取站点名）
         site_stats: Dict[str, Dict[str, int]] = {}
         for tc in root.iter("testcase"):
@@ -98,7 +101,10 @@ class FeishuNotifier:
             is_skipped = tc.find("skipped") is not None
             if has_failure:
                 site_stats[site_name]["failed"] += 1
-            elif not is_skipped:
+            elif is_skipped:
+                # skipped 通常由同 worker 前置用例失败导致，视为失败
+                site_stats[site_name]["failed"] += 1
+            else:
                 # 只有既非失败也非跳过的才算真正通过
                 site_stats[site_name]["passed"] += 1
 
@@ -108,6 +114,7 @@ class FeishuNotifier:
             "errors": errors,
             "skipped": skipped,
             "pass": passed,
+            "effective_failures": effective_failures,
             "site_stats": site_stats,
         }
 
@@ -131,17 +138,21 @@ class FeishuNotifier:
         total = stats["tests"]
         passed = stats["pass"]
         failed = stats["failures"] + stats["errors"]
+        skipped = stats.get("skipped", 0)
+        effective_failures = stats.get("effective_failures", failed + skipped)
 
         # 根据测试结果决定卡片颜色
-        if failed == 0 and stats.get("skipped", 0) == 0:
+        # skipped 通常由前置用例失败导致，视为失败
+        if effective_failures == 0:
             header_color = "green"
             header_text = f"✅ {title} - 全部通过 - Makera"
-        elif failed == 0:
+        elif skipped > 0 and stats["failures"] + stats["errors"] == 0:
+            # 仅有 skipped 无实际 failure（罕见情况，如手动跳过）
             header_color = "yellow"
-            header_text = f"⚠️ {title} - 部分跳过 - Makera"
+            header_text = f"\u26a0\ufe0f {title} - 部分跳过 - Makera"
         else:
             header_color = "red"
-            header_text = f"❌ {title} - 存在失败 - Makera"
+            header_text = f"\u274c {title} - \u5b58\u5728\u5931\u8d25 - Makera"
 
         # 构建各站点结果明细
         site_stats = stats.get("site_stats", {})
