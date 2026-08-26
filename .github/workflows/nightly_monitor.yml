@@ -145,4 +145,5 @@ jobs:
       # 13. 输出执行结果（便于在 Actions 日志中查看）
       - name: Print execution status
         if: always()
-        run: echo "Run ID: ${{ github.run_id }}"
+        run: |
+          echo "Run ID: ${{ github.run_id }}"
