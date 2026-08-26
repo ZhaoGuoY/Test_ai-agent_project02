@@ -1,4 +1,5 @@
 # .github/workflows/nightly_monitor.yml
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 # 作用：每天北京时间 6:50 自动执行 Web 监控全流程（cron 设为 UTC 22:50）
 # 触发方式：schedule 定时 + workflow_dispatch 手动触发
 # 依赖：Node.js 18、Python 3.11、Playwright Chromium
@@ -86,12 +87,12 @@ jobs:
           # ⚠️ Pages 站点 URL 保留仓库名原始大小写：小写地址会 404
           ALLURE_REPORT_URL: https://zhaoguoy.github.io/Test_ai-agent_project02/
 
-      # 9. 生成 Allure 静态报告（合并全量结果与自愈重跑结果）
+      # 9. 生成 Allure 静态报告
       - name: Generate Allure report
         if: always()
         run: |
-          mkdir -p workspace/allure-results workspace/allure-heal-results
-          npx allure generate workspace/allure-results workspace/allure-heal-results -o workspace/allure-report --clean
+          mkdir -p workspace/allure-results
+          npx allure generate workspace/allure-results -o workspace/allure-report --clean
         continue-on-error: true
 
       # 10. 上传测试报告（JUnit XML + HTML + Allure）
@@ -132,9 +133,39 @@ jobs:
           git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages:gh-pages
           echo "✅ 报告已部署: https://zhaoguoy.github.io/Test_ai-agent_project02/"
 
-      # 12. 输出执行结果（便于在 Actions 日志中查看）
-      - name: Print execution status
+      # 12. 发送飞书通知
+      - name: Send Feishu notification
         if: always()
         run: |
-          echo "Exit code: ${{ steps.run_monitor.outputs.exit-code }}"
-          echo "Run ID: ${{ github.run_id }}"
+          python3 << 'EOF'
+import sys
+from pathlib import Path
+# 添加项目根目录到 sys.path（GitHub Actions runner 标准路径）
+project_root = Path.cwd()
+sys.path.insert(0, str(project_root))
+
+from src.notifiers.feishu_notifier import FeishuNotifier
+from src.web.runners.report_parser import parse_junit_report
+
+# 解析 JUnit 报告
+junit_path = project_root / 'workspace/test-results/junit.xml'
+stats = parse_junit_report(junit_path)
+
+# 发送飞书通知
+notifier = FeishuNotifier()
+success = notifier.send_card(stats, title='独立站监控测试报告', heal_info='')
+if success:
+    print('✅ 飞书通知发送成功')
+else:
+    print('❌ 飞书通知发送失败')
+    sys.exit(1)
+EOF
+        env:
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          ALLURE_REPORT_URL: https://zhaoguoy.github.io/Test_ai-agent_project02/
+        continue-on-error: true
+
+      # 13. 输出执行结果（便于在 Actions 日志中查看）
+      - name: Print execution status
+        if: always()
+        run: echo "Run ID: ${{ github.run_id }}"
