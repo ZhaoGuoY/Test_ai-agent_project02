@@ -50,8 +50,8 @@ test.describe('Global 站点', () => {
       expect(ready).toBe(true);
 
       // 重定向恢复检查：setupPage 成功后，页面仍可能被延迟 JS 重定向弹走
-      // 先等待 8s 让延迟重定向有时间触发，再检查 host 和 /products/ 路径
-      await page.waitForTimeout(8000);
+      // 先等待 5s 让延迟重定向有时间触发，再检查 host 和 /products/ 路径
+      await page.waitForTimeout(5000);
       const targetHostForCheck = new URL(TARGET_URL).hostname;
       const currentUrlBeforeAssert = page.url();
       const currentHostBeforeAssert = new URL(currentUrlBeforeAssert).hostname;

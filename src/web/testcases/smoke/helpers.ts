@@ -582,7 +582,8 @@ export async function dismissCloudflareChallenge(page: Page, maxWaitMs = 30000):
  * 页面初始化：导航 → 循环检测跳转 → 循环切换商店 → 验证
  *
  * 增强策略（云端 IP 跳转防护）：
- * - 跳转检测窗口从 40s 延长到 60s，覆盖慢速重定向场景。
+ * - 跳转检测窗口 15s（8 次 × 2s），覆盖初始服务端重定向。
+ * - 检测后 5s 稳定化等待，捕获延迟 JS 重定向。
  * - 最终验证同时检查 host 和 /products/ 路径。
  * - 检测到跳转后通过商店切换器切回目标站点，最多重试 2 轮。
  */
@@ -600,11 +601,11 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
     console.warn(`[helpers] ⚠️ Cloudflare 验证未通过，后续测试可能受影响`);
   }
 
-  // 2. 循环检测跳转（每 2 秒一次，共 60 秒，从 40s 延长以覆盖慢速重定向）
+  // 2. 循环检测跳转（每 2 秒一次，共 15 秒，覆盖初始服务端重定向）
   let redirectDetected = false;
-  for (let i = 1; i <= 30; i++) {
+  for (let i = 1; i <= 8; i++) {
     const currentHost = new URL(page.url()).hostname;
-    console.log(`[helpers] 📊 跳转检测 ${i}/30（${i * 2}s / 60s）: 目标=${targetHost}, 当前=${currentHost}`);
+    console.log(`[helpers] 📊 跳转检测 ${i}/8（${i * 2}s / 16s）: 目标=${targetHost}, 当前=${currentHost}`);
 
     if (currentHost !== targetHost) {
       console.warn(`[helpers] ⚠️ 检测到 IP 跳转: ${currentHost} → 尝试切换回目标`);
@@ -617,7 +618,7 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
 
   // 3. 如果未检测到跳转，关闭弹窗后直接进入测试
   if (!redirectDetected) {
-    console.log(`[helpers] ✅ 60 秒内未检测到跳转，进入测试`);
+    console.log(`[helpers] ✅ 15 秒内未检测到跳转，进入测试`);
     // 关闭弹窗（无论成功与否都继续测试）
     try {
       await dismissAllPopups(page);
@@ -701,12 +702,11 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
     }
   }
 
-  // 4.5 稳定化等待：setupPage 的 60s 跳转检测窗口结束后，延迟 JS 重定向可能才触发
-  // （如页面 JS 在 DOMContentLoaded 后 60-90s 触发地域重定向）
-  // 等待 10s 让延迟重定向有时间触发，最终验证才能捕获
+  // 4.5 稳定化等待：setupPage 的 15s 跳转检测窗口结束后，延迟 JS 重定向可能才触发
+  // 等待 5s 让延迟重定向有时间触发，最终验证才能捕获
   if (!redirectDetected) {
-    console.log(`[helpers]   ⏳ 等待 10s 稳定化，检测延迟重定向...`);
-    await page.waitForTimeout(10000);
+    console.log(`[helpers]   ⏳ 等待 5s 稳定化，检测延迟重定向...`);
+    await page.waitForTimeout(5000);
     const postStabilizationHost = new URL(page.url()).hostname;
     if (postStabilizationHost !== targetHost) {
       console.warn(`[helpers] ⚠️ 稳定化等待期间检测到延迟重定向: ${postStabilizationHost}，进入商店切换`);

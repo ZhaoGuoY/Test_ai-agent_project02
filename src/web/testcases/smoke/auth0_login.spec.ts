@@ -104,10 +104,10 @@ test.describe('Auth0 登录', () => {
 
     // ========== 阶段5：点击头像进入我的账户（重试3次，每次先清CNC弹窗再关幸运转盘）==========
     await test.step('点击头像图标进入我的账户', async () => {
-      // 登录成功后等待 30s 让页面完全加载（导航栏、头像图标、弹窗脚本等全部渲染完毕）
-      console.log(`[Auth0]   ⏳ 等待 30s 页面加载...`);
-      await page.waitForTimeout(30000);
-      console.log(`[Auth0]   ✅ 30s 等待完成，开始寻找头像图标`);
+      // 登录成功后等待 20s 让页面完全加载（导航栏、头像图标、弹窗脚本等全部渲染完毕）
+      console.log(`[Auth0]    等待 20s 页面加载...`);
+      await page.waitForTimeout(20000);
+      console.log(`[Auth0]   ✅ 20s 等待完成，开始寻找头像图标`);
 
       // 定位头像图标：svg.icon.icon-account.icon-lg
       const accountIcon = page.locator('svg.icon-account');

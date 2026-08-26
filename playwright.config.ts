@@ -34,8 +34,11 @@ export default defineConfig({
   outputDir: 'workspace/test-results/artifacts',
 
   // 超时设置（毫秒）— Makera 网站加载较慢，适当放宽
-  timeout: 300_000,
-  expect: { timeout: 30_000 },
+  // 全局超时：整个测试套件最长 15 分钟，防止单个用例卡死导致无限等待
+  globalTimeout: 15 * 60 * 1000,
+  // 单用例超时：150s，基于最长用例结算页流程(112s)留 30% 余量
+  timeout: 150_000,
+  expect: { timeout: 15_000 },
 
   // 串行执行（避免多站点并发导致网络/IP跳转冲突）
   fullyParallel: false,
