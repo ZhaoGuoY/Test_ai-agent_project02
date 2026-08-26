@@ -702,11 +702,11 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
     }
   }
 
-  // 4.5 稳定化等待：setupPage 的 15s 跳转检测窗口结束后，延迟 JS 重定向可能才触发
-  // 等待 5s 让延迟重定向有时间触发，最终验证才能捕获
+  // 4.5 稳定化等待：setupPage 的 16s 跳转检测窗口结束后，延迟 JS 重定向可能才触发
+  // Shopify 地域检测脚本通常在 DOMContentLoaded 后 15-20s 触发，需等待足够时间让重定向发生
   if (!redirectDetected) {
-    console.log(`[helpers]   ⏳ 等待 5s 稳定化，检测延迟重定向...`);
-    await page.waitForTimeout(5000);
+    console.log(`[helpers]    等待 15s 稳定化，检测延迟重定向...`);
+    await page.waitForTimeout(15000);
     const postStabilizationHost = new URL(page.url()).hostname;
     if (postStabilizationHost !== targetHost) {
       console.warn(`[helpers] ⚠️ 稳定化等待期间检测到延迟重定向: ${postStabilizationHost}，进入商店切换`);
@@ -720,6 +720,20 @@ export async function setupPage(page: Page, url: string): Promise<boolean> {
   const hasProductPath = finalUrl.includes('/products/');
 
   console.log(`[helpers]  最终验证: host=${finalHost}, 目标=${targetHost}, 含/products/=${hasProductPath}`);
+  
+  // 如果最终验证失败，再等待 5s 检查是否又被延迟重定向弹走
+  if (finalHost !== targetHost || !hasProductPath) {
+    console.warn(`[helpers] ⚠️ 最终验证失败，再等待 5s 检测二次重定向...`);
+    await page.waitForTimeout(5000);
+    const recheckUrl = page.url();
+    const recheckHost = new URL(recheckUrl).hostname;
+    const recheckHasProductPath = recheckUrl.includes('/products/');
+    console.log(`[helpers]  二次检查: host=${recheckHost}, 目标=${targetHost}, 含/products/=${recheckHasProductPath}`);
+    if (recheckHost === targetHost && recheckHasProductPath) {
+      console.log(`[helpers] ✅✅✅ 页面初始化成功（二次检查通过）: ${recheckUrl}`);
+      return true;
+    }
+  }
   if (finalHost === targetHost && hasProductPath) {
     console.log(`[helpers] ✅✅✅ 页面初始化成功: ${finalUrl}`);
     return true;

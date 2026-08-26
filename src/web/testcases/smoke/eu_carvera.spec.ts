@@ -49,8 +49,8 @@ test.describe('EU 站点', () => {
       expect(ready).toBe(true);
 
       // 重定向恢复检查：setupPage 成功后，页面仍可能被延迟 JS 重定向弹走
-      // 先等待 5s 让延迟重定向有时间触发，再检查 host 和 /products/ 路径
-      await page.waitForTimeout(5000);
+      // Shopify 地域检测脚本通常在 DOMContentLoaded 后 15-20s 触发，需等待足够时间让重定向发生
+      await page.waitForTimeout(10000);
       const targetHostForCheck = new URL(TARGET_URL).hostname;
       const currentUrlBeforeAssert = page.url();
       const currentHostBeforeAssert = new URL(currentUrlBeforeAssert).hostname;
@@ -59,6 +59,15 @@ test.describe('EU 站点', () => {
         console.warn(`[EU] ⚠️ setupPage 后检测到延迟重定向: ${currentUrlBeforeAssert} → 重新执行 setupPage 纠正`);
         const reReady = await setupPage(page, TARGET_URL);
         expect(reReady).toBe(true);
+      }
+
+      // 最终断言前再检查一次 URL，防止二次重定向
+      const finalCheckUrl = page.url();
+      const finalCheckHasProductPath = finalCheckUrl.includes('/products/');
+      if (!finalCheckHasProductPath) {
+        console.warn(`[EU] ⚠️ 最终断言前再次检测到重定向: ${finalCheckUrl} → 重新执行 setupPage 纠正`);
+        const reReady2 = await setupPage(page, TARGET_URL);
+        expect(reReady2).toBe(true);
       }
 
       // 验证 URL 包含 /products/（URL 字符串断言）
