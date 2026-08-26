@@ -136,30 +136,7 @@ jobs:
       # 12. 发送飞书通知
       - name: Send Feishu notification
         if: always()
-        run: |
-          python3 << 'EOF'
-import sys
-from pathlib import Path
-# 添加项目根目录到 sys.path（GitHub Actions runner 标准路径）
-project_root = Path.cwd()
-sys.path.insert(0, str(project_root))
-
-from src.notifiers.feishu_notifier import FeishuNotifier
-from src.web.runners.report_parser import parse_junit_report
-
-# 解析 JUnit 报告
-junit_path = project_root / 'workspace/test-results/junit.xml'
-stats = parse_junit_report(junit_path)
-
-# 发送飞书通知
-notifier = FeishuNotifier()
-success = notifier.send_card(stats, title='独立站监控测试报告', heal_info='')
-if success:
-    print('✅ 飞书通知发送成功')
-else:
-    print('❌ 飞书通知发送失败')
-    sys.exit(1)
-EOF
+        run: python scripts/send_feishu_notification.py
         env:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           ALLURE_REPORT_URL: https://zhaoguoy.github.io/Test_ai-agent_project02/
