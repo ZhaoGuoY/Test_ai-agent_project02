@@ -1,6 +1,8 @@
 # .github/workflows/nightly_monitor.yml
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-# 作用：每天北京时间 6:50 自动执行 Web 监控全流程（cron 设为 UTC 22:50）
+# 作用：每天自动执行 Web 监控全流程
+# 定时策略：cron 使用 UTC 时间。实测 GitHub 调度器有约 2.5~3 小时延迟（高峰时段更久），
+#           故将 cron 提前至 UTC 21:13，实际运行时间落在北京时间约 8:00~9:00 的早高峰前窗口。
 # 触发方式：schedule 定时 + workflow_dispatch 手动触发
 # 依赖：Node.js 18、Python 3.11、Playwright Chromium
 # 环境变量：FEISHU_WEBHOOK_URL、LLM_API_KEY（需在 GitHub Secrets 中配置）
@@ -12,9 +14,11 @@ on:
   push:
     branches: [ "master" ]
 
-  # 定时触发：UTC 23:45（北京时间次日 7:45）
+  # 定时触发：UTC 21:13（北京时间次日 5:13），叠加平台调度延迟后实际运行约在 8:00~9:00 之间；
+  # 分钟级偏移用于降低与其他仓库的调度碰撞，进一步减少被延迟/跳过的概率；
+  # ⚠️ GitHub schedule 仅在默认分支（master）上的工作流文件生效，勿只改其他分支。
   schedule:
-  - cron: '45 23 * * *'
+  - cron: '13 21 * * *'
 
   # 手动触发（用于测试和调试）
   workflow_dispatch:
@@ -110,7 +114,8 @@ jobs:
 
       # 11. 部署 Allure 报告到 gh-pages 分支（供飞书卡片按钮跳转查看）
       #     原 Setup Pages / Upload Pages artifact / deploy-pages 三件套因 GitHub Pages
-      #     服务侧构建管道异常（builds 始终为空）已废弃，改为直接推送 gh-pages 分支
+      #     服务侧构建管道异常（builds 始终为空）已废弃，改为直接推送 gh-pages 分支。
+      #     使用孤儿提交 + 常规 push：只保留最新一份报告，同时避免 --force 覆写整个分支历史。
       - name: Deploy Allure report to gh-pages
         if: always()
         run: |
@@ -128,9 +133,16 @@ jobs:
           git init -b gh-pages
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # 孤儿提交：不携带任何历史，每次部署仅包含最新报告内容，控制分支体积
+          git checkout --orphan gh-pages
           git add -A
           git commit -m "Deploy Allure report (run ${{ github.run_id }})"
-          git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages:gh-pages
+          # 常规 push：远端不存在该分支时自动创建；存在时以孤儿提交续接，不覆写历史。
+          # 若推送因远端状态异常失败，回退为强制推送，保证部署步骤不因历史问题阻塞。
+          if ! git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages:gh-pages; then
+            echo "⚠️ 常规推送失败，回退为强制推送"
+            git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages:gh-pages
+          fi
           echo "✅ 报告已部署: https://zhaoguoy.github.io/Test_ai-agent_project02/"
 
       # 12. 发送飞书通知
