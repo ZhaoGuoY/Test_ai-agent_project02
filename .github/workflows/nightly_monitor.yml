@@ -1,9 +1,8 @@
 # .github/workflows/nightly_monitor.yml
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-# 作用：每天自动执行 Web 监控全流程（北京时间 7:45 主调度，9:30 兜底）
-# 定时策略：cron 使用 UTC 时间。实测 GitHub 免费调度器在高峰时段会延迟甚至跳过定时任务（本仓库曾连续两天被跳过），
-#           因此采用双调度 + 去重守卫：主调度北京时间 7:45，若被跳过则由 9:30 兜底调度补跑；
-#           schedule-dedup 守卫确保当天已有成功的定时运行时不重复执行。
+# 作用：每天自动执行 Web 监控全流程（北京时间 7:45 定时触发）
+# 定时策略：cron 使用 UTC 时间，UTC 23:45 = 北京时间 7:45。
+#           GitHub 免费调度器存在排队延迟（历史实测多数在 9 点前完成，高峰时段可能延迟更久），接受该延迟，不设额外调度点。
 # 触发方式：schedule 定时 + workflow_dispatch 手动触发
 # 依赖：Node.js 18、Python 3.11、Playwright Chromium
 # 环境变量：FEISHU_WEBHOOK_URL、LLM_API_KEY（需在 GitHub Secrets 中配置）
@@ -15,14 +14,10 @@ on:
   push:
     branches: [ "master" ]
 
-  # 定时触发（cron 为 UTC 时间）：
-  #   - 主调度：UTC 23:45 = 北京时间 7:45；
-  #   - 兜底调度：UTC 01:30 = 北京时间 9:30，防 GitHub 调度器高峰时段跳过/延迟，
-  #     配合 schedule-dedup 守卫保证当天最多成功执行一次；
+  # 定时触发：UTC 23:45 = 北京时间 7:45，接受平台排队延迟（多数在 9 点前完成）；
   # ⚠️ GitHub schedule 仅在默认分支（master）上的工作流文件生效，勿只改其他分支。
   schedule:
   - cron: '45 23 * * *'
-  - cron: '30 1 * * *'
 
   # 手动触发（用于测试和调试）
   workflow_dispatch:
@@ -34,48 +29,12 @@ env:
 
 # gh-pages 分支部署权限（Allure 报告托管）
 # 说明：原 actions/deploy-pages 工作流部署方式出现服务侧异常（pages/builds 始终为空、站点 404），
-# 改为直接向 gh-pages 分支推送报告，需要 contents: write；
-# actions: read 供 schedule-dedup 守卫查询历史运行记录（gh run list）
+# 改为直接向 gh-pages 分支推送报告，需要 contents: write
 permissions:
   contents: write
-  actions: read
 
 jobs:
-  # 0. 定时触发去重守卫（仅对 schedule 事件生效）
-  #    背景：GitHub 免费调度器高峰时段会跳过定时任务，故增设 9:30 兜底调度；
-  #    本守卫检查当天是否已有成功的定时运行，避免主/兜底调度重复执行。
-  #    容错：守卫自身查询失败时输出为空，监控任务照常执行（宁可多跑，不可漏跑）。
-  schedule-dedup:
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      skip: ${{ steps.check.outputs.skip }}
-    steps:
-      - name: Check if today's scheduled run already succeeded
-        id: check
-        run: |
-          TODAY=$(TZ=Asia/Shanghai date +%Y-%m-%d)
-          # 北京时间今日 0 点换算为 UTC 时间，用于与 createdAt（UTC）比较
-          START_UTC=$(date -u -d "$TODAY 00:00:00 +0800" +%Y-%m-%dT%H:%M:%SZ)
-          DUP=$(gh run list --workflow nightly_monitor.yml --event schedule --limit 30 \
-                --json createdAt,conclusion,databaseId \
-                --jq "[.[] | select(.conclusion==\"success\" and .createdAt >= \"$START_UTC\" and .databaseId != $GITHUB_RUN_ID)] | length")
-          echo "北京日期 $TODAY（UTC 起点 $START_UTC），当天已成功的定时运行数: $DUP"
-          if [ "$DUP" -gt 0 ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "⏭️ 今天的定时任务已成功执行过，跳过本次调度"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "▶️ 今天尚无成功的定时运行，继续执行监控流程"
-          fi
-
   monitor:
-    needs: schedule-dedup
-    # 守卫判定当天已有成功的定时运行时跳过本次；
-    # push/手动触发时 schedule-dedup 整体被跳过，always() 兜底保证本 job 不受守卫状态影响正常执行。
-    # 无论守卫成功、失败还是被跳过，只要未明确输出 skip=true，监控流程都会执行。
-    if: always() && needs.schedule-dedup.outputs.skip != 'true'
     # 使用 Ubuntu 最新 LTS 版本
     runs-on: ubuntu-latest
 
