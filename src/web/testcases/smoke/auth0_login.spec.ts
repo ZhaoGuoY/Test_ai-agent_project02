@@ -1,4 +1,4 @@
-// Auth0 登录冒烟测试 — 验证账号密码登录流程及登录成功后的账号页面
+// Auth0 登录冒烟测试 — 验证账号密码登录流程及登录成功后的账号页面111
 // 步骤：打开 Auth0 登录页 → 输入邮箱 → 勾选协议 → 继续 → 输入密码 → 勾选协议 → 继续 → 等待8秒页面加载 → 点击头像（重试3次，每次先清CNC弹窗再关幸运转盘）→ 进入我的账户 → 断言邮箱
 import { test, expect } from '@playwright/test';
 import { parameter } from 'allure-js-commons';
