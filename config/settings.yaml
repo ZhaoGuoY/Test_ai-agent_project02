@@ -11,7 +11,7 @@ target:
     - name: EU
       url: "https://eu.makera.com/products/dust-collector-lite"
     - name: Global
-      url: "https://global.makera.com/products/makera-z1-desktop-cnc"
+      url: "https://global.makera.com/products/makera-essential-milling-bit-set"
   title_contains: "Makera"   # 用于增量1冒烟测试断言
 
 # Playwright 相关配置
@@ -31,6 +31,14 @@ feishu:
   # ⚠️ Pages 站点 URL 保留仓库名原始大小写，小写地址会 404；
   # 如需覆盖可设置环境变量 ALLURE_REPORT_URL（优先级更高）
   report_url: "https://zhaoguoy.github.io/Test_ai-agent_project02/"
+
+# 自愈开关（线上 CI 与本地独立控制）
+# 环境变量 HEAL_ENABLED（true/false）可临时覆盖此处配置，优先级更高，
+# CI workflow 通过该环境变量控制；本地也可直接改这里。
+# 判定规则：os.environ["CI"]=="true" 时读 enabled_ci，否则读 enabled_local
+heal:
+  enabled_ci: false      # 线上 CI（GitHub Actions）是否启用自愈，false=只依赖 Playwright 原生重试不改代码
+  enabled_local: false   # 本地执行是否启用自愈，默认关闭，需要修定位器时手动改为 true
 
 # LLM 配置（增量3使用）
 llm:

@@ -16,7 +16,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.core.config_loader import load_config
+from src.core.config_loader import load_config, is_heal_enabled
 from src.core.logger import get_logger
 from src.app.agents.base_agent import create_agent
 
@@ -83,7 +83,22 @@ def main():
         sys.exit(1)
 
     # 3. 启动 Agent，给定初始任务
-    #    Agent 会根据 system_prompt 自主执行完整流程
+    #    Agent 会根据 system_prompt 自主执行完整流程；
+    #    步骤 4 按自愈开关（CI/本地独立配置）决定是否要求触发自愈，
+    #    与 MonitorAgent 的工具挂载/提示词保持一致，避免指令冲突
+    heal_enabled = is_heal_enabled(config)
+    logger.info(f"自愈开关: {'开启' if heal_enabled else '关闭'}（失败{'触发自愈修复' if heal_enabled else '仅报告，不修改代码'}）")
+    if heal_enabled:
+        step4 = (
+            f"4. 【关键步骤】如果 read_junit_report 返回的 failed_cases 不为空，"
+            f"必须立即调用 trigger_healing(failures_json) 触发自愈流程，"
+            f"将完整的 JSON 数据传入，不可跳过此步骤！\n"
+        )
+    else:
+        step4 = (
+            f"4. 如果 read_junit_report 返回的 failed_cases 不为空，如实记录失败用例；"
+            f"自愈已关闭，禁止修改任何测试代码，直接进入下一步\n"
+        )
     task = (
         f"请对以下站点执行完整的监控流程：\n"
         f"站点列表：{', '.join(s['name'] + '(' + s['url'] + ')' for s in sites)}\n"
@@ -91,9 +106,7 @@ def main():
         f"1. 调用 generate_test_specs() 检查并生成缺失的测试脚本\n"
         f"2. 调用 run_playwright_tests() 执行所有站点的测试\n"
         f"3. 调用 read_junit_report() 解析测试结果\n"
-        f"4. 【关键步骤】如果 read_junit_report 返回的 failed_cases 不为空，"
-        f"必须立即调用 trigger_healing(failures_json) 触发自愈流程，"
-        f"将完整的 JSON 数据传入，不可跳过此步骤！\n"
+        f"{step4}"
         f"5. 调用 push_feishu_report() 推送飞书报告（需包含各站点结果和自愈结果）"
     )
 

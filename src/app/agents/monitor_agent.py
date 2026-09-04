@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 from langchain_core.tools import tool
 
 from src.app.agents.base_agent import BaseAgent
+from src.core.config_loader import is_heal_enabled
 from src.core.logger import get_logger
 from src.web.runners.playwright_runner import PlaywrightRunner
 from src.web.runners.report_parser import parse_junit_failures, get_summary, merge_junit_files
@@ -30,6 +31,11 @@ class MonitorAgent(BaseAgent):
 
     agent_name = "monitor"
     agent_description = "自主执行 Web 监控：按站点遍历 → 生成脚本 → 执行测试 → 自愈 → 推送报告"
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        super().__init__(config)
+        # 自愈开关：按环境（CI/本地）独立判定，见 config_loader.is_heal_enabled
+        self.heal_enabled = is_heal_enabled(self.config)
 
     # ── 辅助方法 ──────────────────────────────────────────
 
@@ -77,7 +83,7 @@ class MonitorAgent(BaseAgent):
         """
         runner = PlaywrightRunner(project_root=self.project_root)
         notifier = FeishuNotifier()
-        heal_result = ""  # 记录自愈结果，供飞书通知使用
+        heal_result = ""  # 记录自愈结果，供飞书通知使用；自愈关闭时保持空串
         initial_junit_backup: Optional[Path] = None  # 初始测试结果备份（自愈前）
 
         @tool
@@ -325,13 +331,20 @@ class MonitorAgent(BaseAgent):
                     logger.info(f"[MonitorAgent] 异常后已恢复初始 JUnit XML 备份")
                 return f"❌ 自愈 Agent 调用异常: {e}"
 
-        return [
+        tools = [
             generate_test_specs,
             run_playwright_tests,
             read_junit_report,
             push_feishu_report,
-            trigger_healing,
         ]
+        # 自愈开关：关闭时不挂载自愈工具，Agent 无从调用，失败只报告不修代码；
+        # 开关按 CI/本地环境独立判定（见 config_loader.is_heal_enabled）
+        if self.heal_enabled:
+            tools.append(trigger_healing)
+            logger.info("[MonitorAgent] 自愈开关: 开启，失败用例将触发 HealAgent")
+        else:
+            logger.info("[MonitorAgent] 自愈开关: 关闭，失败用例仅报告，不修改代码")
+        return tools
 
     def build_system_prompt(self) -> str:
         """
@@ -343,6 +356,27 @@ class MonitorAgent(BaseAgent):
         - HealAgent 根据 classname 定位对应站点 spec 文件进行修复
         """
         site_names = ", ".join(s["name"] for s in self.target_sites)
+        # 自愈开关：按环境（CI/本地）读取配置，决定步骤 4 的提示词走向；
+        # 开关关闭时下方工具列表也不含 trigger_healing，双重保险防 LLM 自行触发自愈
+        if self.heal_enabled:
+            heal_step = (
+                "4. **【最关键步骤 - 绝对不可跳过】** 检查 `read_junit_report` 的返回值：\n"
+                "   - 如果 `failed_cases` 数组不为空（有任何失败用例），**必须立即调用** `trigger_healing(failures_json)` 触发自愈\n"
+                "   - 将 `read_junit_report` 返回的完整 JSON 字符串直接传入 `trigger_healing` 的 `failures_json` 参数\n"
+                "   - **绝对不允许在存在失败用例时跳过自愈直接推送报告**"
+            )
+            heal_rule = "- `trigger_healing`：**存在失败用例时必须调用**，传入 read_junit_report 返回的完整 JSON，HealAgent 自动匹配站点 URL 并修复定位器"
+            heal_note = "- **绝对禁止在有失败用例时跳过 trigger_healing 直接推送报告**"
+            heal_output = "、自愈结果"
+        else:
+            heal_step = (
+                "4. 检查 `read_junit_report` 的返回值：如果 `failed_cases` 数组不为空，**如实记录失败并直接进入下一步**；\n"
+                "   - **当前自愈已关闭：绝对禁止修改任何测试代码，也禁止调用不存在的工具**，失败用例留待人工处理"
+            )
+            heal_rule = "- 自愈已关闭：没有 `trigger_healing` 工具，存在失败用例时不要尝试修复代码，直接进入飞书推送"
+            heal_note = "- 自愈已关闭：即使存在失败用例也直接推送报告，并在汇报中注明失败用例待人工处理"
+            heal_output = ""
+
         return f"""你是一个专业的 Web 监控 Agent，负责自动化监控 Makera 多个站点（{site_names}）的健康状态。
 
 ## 架构说明
@@ -353,10 +387,7 @@ class MonitorAgent(BaseAgent):
 1. 调用 `generate_test_specs()` —— 内部遍历所有站点，缺失的自动生成，已有的跳过
 2. 调用 `run_playwright_tests()` —— Playwright 自动发现并串行执行所有 spec 文件
 3. 调用 `read_junit_report()` —— 解析测试结果，获取各站点通过/失败明细
-4. **【最关键步骤 - 绝对不可跳过】** 检查 `read_junit_report` 的返回值：
-   - 如果 `failed_cases` 数组不为空（有任何失败用例），**必须立即调用** `trigger_healing(failures_json)` 触发自愈
-   - 将 `read_junit_report` 返回的完整 JSON 字符串直接传入 `trigger_healing` 的 `failures_json` 参数
-   - **绝对不允许在存在失败用例时跳过自愈直接推送报告**
+{heal_step}
 5. 调用 `push_feishu_report()` —— 推送飞书卡片（含各站点明细和自愈结果）
 6. 向用户简洁汇报各站点执行结果
 
@@ -364,18 +395,18 @@ class MonitorAgent(BaseAgent):
 - `generate_test_specs`：必须先于 `run_playwright_tests` 调用
 - `run_playwright_tests`：返回码 0=全部通过，非0=存在失败
 - `read_junit_report`：failed_cases 中包含 classname 字段，可定位到具体站点文件
-- `trigger_healing`：**存在失败用例时必须调用**，传入 read_junit_report 返回的完整 JSON，HealAgent 自动匹配站点 URL 并修复定位器
+{heal_rule}
 - `push_feishu_report`：始终在最后调用，确保团队收到通知
 
 ## 输出要求
 - 用中文汇报
-- 包含：各站点生成/跳过状态、测试通过/失败数（按站点）、自愈结果、飞书推送状态
+- 包含：各站点生成/跳过状态、测试通过/失败数（按站点）{heal_output}、飞书推送状态
 - 如果某站点失败，明确指出站点名和失败用例
 - 保持简洁，不超过 400 字
 
 ## 注意事项
 - 每次执行独立，不假设上次状态
 - 某工具调用失败时记录错误并继续后续步骤（如生成失败仍尝试执行已有脚本）
-- **绝对禁止在有失败用例时跳过 trigger_healing 直接推送报告**
+{heal_note}
 - 探索策略详见 `explore_home` 技能文件
 """

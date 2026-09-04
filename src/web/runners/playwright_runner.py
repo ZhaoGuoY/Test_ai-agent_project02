@@ -40,7 +40,9 @@ class PlaywrightRunner:
           保留同一轮监控内其他站点的重跑结果，生成报告时以最新一次为准）
         """
         npx = self.npx_path or "npx"
-        cmd = [npx, "playwright", "test", "--workers=1"]
+        # 显式带 --retries=3，与 CI workflow 的 npx playwright test --retries=3 逻辑对齐：
+        # 失败只原样重跑最多 3 次不改代码；重试耗尽后是否自愈由 heal 开关决定
+        cmd = [npx, "playwright", "test", "--workers=1", "--retries=3"]
         if spec_file:
             cmd.append(spec_file)
         elif test_dir:
@@ -101,7 +103,9 @@ class PlaywrightRunner:
                 logger.warning(f"[playwright] {line.rstrip()}")
                 stderr_lines.append(line)
 
-            process.wait(timeout=420)
+            # 等待子进程结束：需容纳 --retries=3 的多轮重跑（与 config 全局超时 45min 对齐，
+            # 取 47min 略大于全局超时，避免重跑中途被 Python 层提前杀掉）
+            process.wait(timeout=47 * 60)
             stdout_text = ''.join(stdout_lines)
             stderr_text = ''.join(stderr_lines)
             logger.info(f"命令执行完成，返回码: {process.returncode}")

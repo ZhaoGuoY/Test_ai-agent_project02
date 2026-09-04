@@ -79,13 +79,26 @@ jobs:
       - name: Verify Playwright installation
         run: npx playwright --version
 
-      # 8. 运行测试（只重试不修改脚本）
-      #    使用 Playwright 原生 retries=3，不调用自愈逻辑
-      - name: Run Playwright Tests (retry only)
+      # 8. 运行测试（由 CI 自愈开关控制执行模式）
+      #    - HEAL_ENABLED=false（现状）：Playwright 原生 retries=3，只重试不修改脚本，
+      #      完全绕过 Python Agent 层，无自愈入口；
+      #    - HEAL_ENABLED=true：改走 run_monitor.py 全流程（含失败自愈修定位器），
+      #      开关与 settings.yaml 的 heal.enabled_ci 保持同义，此处环境变量优先级更高。
+      - name: Run tests (switchable heal)
         id: run_tests
-        run: npx playwright test --retries=3
+        run: |
+          if [ "$HEAL_ENABLED" = "true" ]; then
+            echo "✅ CI 自愈开关: 开启，走 Agent 全流程（含自愈）"
+            python scripts/run_monitor.py
+          else
+            echo "⛔ CI 自愈开关: 关闭，仅原生重试不改代码"
+            npx playwright test --retries=3
+          fi
         continue-on-error: true
         env:
+          # CI 自愈开关：false=只重试，true=失败触发 HealAgent 修改定位器；
+          # 同时供 run_monitor.py 内部的 is_heal_enabled 读取，两路一致
+          HEAL_ENABLED: "false"
           # 飞书卡片"查看详细测试报告"按钮指向的 GitHub Pages 报告地址
           # ⚠️ Pages 站点 URL 保留仓库名原始大小写：小写地址会 404
           ALLURE_REPORT_URL: https://zhaoguoy.github.io/Test_ai-agent_project02/

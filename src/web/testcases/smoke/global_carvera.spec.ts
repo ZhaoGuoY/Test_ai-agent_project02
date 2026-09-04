@@ -5,10 +5,12 @@ import { test as base, expect, Page } from '@playwright/test';
 import { parameter } from 'allure-js-commons';
 import { setupPage, dismissAllPopups, addToCartViaApi, dismissCloudflareChallenge } from './helpers';
 
-const TARGET_URL = 'https://global.makera.com/products/makera-3d-wired-probe';
+const TARGET_URL = 'https://global.makera.com/products/makera-essential-milling-bit-set';
 // 目标商品名称（断言购物车与结算页中商品存在的基准文本；
-// getByRole/getByText 默认子串匹配，基准文本不含后缀可兼容购物车/结算页的两种形态）
-const PRODUCT_NAME = 'Makera 3D Wired Probe';
+// getByRole/getByText 默认子串匹配，基准文本不含前缀可兼容购物车/结算页的两种形态）
+// 注意：Global 站点购物车显示 "Essential Milling Bit Set"（无 Makera 前缀），
+// 结算页可能显示完整名称，用短名作为子串匹配基准
+const PRODUCT_NAME = 'Essential Milling Bit Set';
 const REGION = '东京 / ja-JP / Asia/Tokyo';
 
 // worker 级共享页面：两个用例使用同一个浏览器页面，
@@ -150,35 +152,46 @@ test.describe('Global 站点', () => {
       { type: '预期结果', description: '点击 Check out 后跳转结算页 /checkouts/，且订单摘要含目标商品' },
       { type: '前置条件', description: '上一用例已加购成功，购物车抽屉处于弹出状态（沿用页面现场）' },
     );
-
-    // ========== 阶段1：前置检查（确认上一用例已加购成功） ==========
+  
+    // ========== 阶段 1：前置检查（确认上一用例已加购成功） ==========
     // 严格断言 dialog 角色：顶部导航的 "My Cart" 文本会让 getByText 误报
     const cartDrawer = page.getByRole('dialog', { name: /my cart/i }).first();
     await test.step('前置检查：购物车抽屉处于弹出状态', async () => {
       // 本用例直接沿用上一用例的页面现场，不重新初始化、不重新加购
-      await expect(cartDrawer).toBeVisible({ timeout: 15000 });
+      // Shopify 购物车抽屉可能在两用例间隙自动关闭，需要兜底重新打开
+      let drawerVisible = await cartDrawer.isVisible({ timeout: 5000 }).catch(() => false);
+      if (!drawerVisible) {
+        console.warn(`[Global] ⚠️ 购物车抽屉已关闭（Shopify 自动收起），通过购物车图标重新打开`);
+        const cartIcon = page.locator('a[href="/cart"]').first();
+        await cartIcon.scrollIntoViewIfNeeded({ timeout: 10000 }).catch(() => {});
+        await cartIcon.click({ timeout: 10000 });
+        await page.waitForTimeout(3000);
+        drawerVisible = await cartDrawer.isVisible({ timeout: 10000 }).catch(() => false);
+        if (!drawerVisible) {
+          throw new Error('[Global] 前置条件不满足：重新打开购物车抽屉后仍不可见');
+        }
+        console.log(`[Global] ✅ 购物车抽屉已重新打开`);
+      }
       console.log(`[Global] ✅ 购物车抽屉已弹出，直接开始点击 Check Out`);
     });
-
-    // ========== 阶段2：点击 Check out 按钮进入结算页 ==========
-    await test.step('弹窗清理并点击 Check out 按钮', async () => {
+  
+    // ========== 阶段 2：点击 Check out 按钮进入结算页 ==========
+    await test.step('点击 Check out 按钮', async () => {
       // 定位方式：限定在购物车抽屉（dialog）内匹配 "Check out"
       // （该控件在不同渲染状态下可能是 button 或 link 角色，用逗号选择器兼容两种形态）
       const checkOutBtn = cartDrawer.locator('button, a').getByText(/check\s*out/i).first();
       await expect(checkOutBtn).toBeVisible({ timeout: 10000 });
       console.log(`[Global] ✅ Check Out 按钮可见，准备进入结算页`);
-      // 循环最多 3 轮：每轮先关闭全部浮窗再点击（单次点击限时 8s，防遮挡时长时间自动滚动重试）
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        await dismissAllPopups(page);
-        try {
-          await checkOutBtn.click({ timeout: 8000 });
-          break;
-        } catch {
-          console.warn(`[Global] ⚠️ 第${attempt}轮点击失败（可能被浮窗遮挡），重新清理后重试`);
-          if (attempt === 3) throw new Error('[Global] Check out 按钮 3 轮点击均失败');
-        }
-      }
+      // 等待 2s 确保抽屉动画完成、按钮完全可交互
+      await page.waitForTimeout(2000);
+      // 滚动到按钮位置后点击（抽屉内容很长，按钮可能处于视口外）
+      // 注意：不调用 dismissAllPopups，避免 dismissNavDropdown 的鼠标移动误关抽屉
+      await checkOutBtn.scrollIntoViewIfNeeded({ timeout: 8000 });
+      await page.waitForTimeout(500);
+      await checkOutBtn.click({ timeout: 8000 });
       console.log(`[Global] 💳 已点击 Check Out，等待结算页加载...`);
+      // 等待 10s 给结算页导航充足时间（Shopify 结算页可能触发 Cloudflare 验证）
+      await page.waitForTimeout(10000);
     });
 
     // ========== 阶段3：断言结算页商品与 URL ==========

@@ -68,6 +68,32 @@ def _resolve_env_vars(obj: Any) -> None:
                 _resolve_env_vars(item)
 
 
+def is_heal_enabled(config: Any = None) -> bool:
+    """
+    判断当前环境是否启用自愈（线上 CI 与本地分别控制）
+
+    判定优先级：
+    1. 环境变量 HEAL_ENABLED（true/false）最高，可临时覆盖配置，
+       CI workflow 即通过它控制是否走自愈流程；
+    2. 否则读 settings.yaml 的 heal.enabled_ci / heal.enabled_local，
+       由 os.environ["CI"] 是否为 "true" 区分环境（GitHub Actions 自动注入）。
+    配置缺失时默认关闭自愈，只依赖 Playwright 原生重试。
+
+    Args:
+        config: 已加载的配置字典，默认内部调用 load_config()
+
+    Returns:
+        True=启用自愈（失败时触发 HealAgent 修代码），False=只重试不改代码
+    """
+    env_flag = os.getenv("HEAL_ENABLED", "").strip().lower()
+    if env_flag in ("true", "false"):
+        return env_flag == "true"
+
+    heal_cfg = (config or load_config()).get("heal", {}) or {}
+    in_ci = os.getenv("CI", "").lower() == "true"
+    return bool(heal_cfg.get("enabled_ci" if in_ci else "enabled_local", False))
+
+
 # 模块级便捷函数，直接获取常用配置
 def get_target_url() -> str:
     """获取目标测试 URL（返回第一个站点）"""
