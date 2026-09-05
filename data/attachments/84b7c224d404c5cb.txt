@@ -1,0 +1,8 @@
+[Global] ✅ 购物车抽屉已弹出，直接开始点击 Check Out
+[Global] ✅ Check Out 按钮可见，准备进入结算页
+[Global] 💳 已点击 Check Out，等待结算页加载...
+[Global] ✅ 等待完成，开始断言
+[helpers]   🔄 检查 Cloudflare 真人验证...
+[helpers]   ℹ️ 未检测到 Cloudflare 验证页
+[Global] ✅ 结算页中存在目标商品: Essential Milling Bit Set
+[Global] ✅ 已跳转至结算页: https://global.makera.com/checkouts/cn/hWNGSlLXS90eMROtaTKmq2zK/en-hk?_r=AQABtBmb52ozYBTwCYeCaz8_5uhmLkQr9CB3n7XBB1dt&auto_redirect=false&edge_redirect=true&skip_shop_pay=true

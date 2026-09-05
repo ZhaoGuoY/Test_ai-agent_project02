@@ -1,0 +1,3 @@
+[Auth0]   ⚠️ 第1次点击后页面未跳转到 /account，当前 URL: https://www.makera.com/?utm_source=Makera+EU，继续重试
+[Auth0]   ⚠️ 第2次点击后页面未跳转到 /account，当前 URL: https://www.makera.com/，继续重试
+[Auth0]   ⚠️ 第3次点击后页面未跳转到 /account，当前 URL: https://www.makera.com/，继续重试
