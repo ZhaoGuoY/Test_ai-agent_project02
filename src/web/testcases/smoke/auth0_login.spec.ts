@@ -2,7 +2,7 @@
 // 步骤：打开 Auth0 登录页 → 输入邮箱 → 勾选协议 → 继续 → 输入密码 → 勾选协议 → 继续 → 等待8秒页面加载 → 点击头像（重试3次，每次先清CNC弹窗再关幸运转盘）→ 进入我的账户 → 断言邮箱
 import { test, expect } from '@playwright/test';
 import { parameter } from 'allure-js-commons';
-import { dismissGuidePopup, dismissSpinPopup } from './helpers';
+import { dismissGuidePopup, dismissSpinPopup, dismissCloudflareChallenge } from './helpers';
 
 const AUTH0_LOGIN_URL =
   'https://auth0.makera.com/u/login/identifier?state=hKFo2SB0dEFEclkxQTROZU8xMkdpc0J1QkJQQXBZNEN2WE5xYaFur3VuaXZlcnNhbC1sb2dpbqN0aWTZIFFqU2JQSkk0RTQ2U1BHZGxnOGx0dFhfdlJsZ1FHUkFMo2NpZNkgWDdleHRGbHVIWjlxaG9ncmZ4SkVTRDBZc1NhdEJPRlM';
@@ -19,8 +19,32 @@ test.describe('Auth0 登录', () => {
     // ========== 阶段1：打开 Auth0 登录页并输入邮箱 ==========
     await test.step('打开 Auth0 登录页并输入邮箱', async () => {
       await page.goto(AUTH0_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      // 落地后有两种结局：直接渲染登录页，或被 auth0.makera.com 前置的 Cloudflare 边缘拦截
+      // （GitHub Actions 数据中心 IP 信任度低易命中；拦截页没有 Welcome 标题，直接断言必然超时）。
+      // 因此对两个标记做 15s 竞态等待：登录页先出现则零额外开销；验证页先出现则自动过验证；
+      // 两者都没出现则立即 dump 页面摘要（URL/标题/正文前 500 字）便于 CI 日志定位拦截页或错误页。
+      const welcome = page.getByText('Welcome').first();
+      const firstHit = await Promise.race([
+        welcome.waitFor({ state: 'visible', timeout: 15000 }).then(() => 'welcome'),
+        page.locator('text=/Verify you are human|Just a moment/i').first()
+          .waitFor({ state: 'visible', timeout: 15000 }).then(() => 'challenge'),
+      ]).catch(() => 'none');
+
+      if (firstHit === 'challenge') {
+        console.log(`[Auth0] ⚠️ 命中 Cloudflare 验证页，尝试自动通过...`);
+        const passed = await dismissCloudflareChallenge(page);
+        if (!passed) console.error(`[Auth0] ❌ Cloudflare 验证未通过，当前 URL: ${page.url()}`);
+      } else if (firstHit === 'none') {
+        const dump = await page.evaluate(() => ({
+          url: location.href,
+          title: document.title,
+          body: (document.body?.innerText ?? '').slice(0, 500),
+        })).catch(() => null);
+        throw new Error(`登录页 15s 内未渲染（Welcome 与 Cloudflare 验证页均未出现），页面摘要: ${JSON.stringify(dump)}`);
+      }
+
       // 等待邮箱页渲染（Welcome 标题可见）
-      await expect(page.getByText('Welcome').first()).toBeVisible({ timeout: 15000 });
+      await expect(welcome).toBeVisible({ timeout: 15000 });
       console.log(`[Auth0] ✅ 登录页已加载，当前 URL: ${page.url()}`);
 
       // 定位邮箱输入框：id="username"

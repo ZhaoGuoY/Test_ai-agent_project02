@@ -505,8 +505,9 @@ async function switchToTargetStore(page: Page, targetUrl: string): Promise<boole
 export async function dismissCloudflareChallenge(page: Page, maxWaitMs = 30000): Promise<boolean> {
   console.log(`[helpers]   🔄 检查 Cloudflare 真人验证...`);
 
-  // 检测是否在 Cloudflare 验证页（通过页面特征文本判断，timeout 放宽到 5s 确保 DOM 渲染完成）
-  const isChallengePage = await page.locator('text=Verify you are human').first()
+  // 检测是否在 Cloudflare 验证页（通过页面特征文本判断，覆盖 "Verify you are human" 与
+  // "Just a moment..." 两种拦截页文案，timeout 放宽到 5s 确保 DOM 渲染完成）
+  const isChallengePage = await page.locator('text=/Verify you are human|Just a moment/i').first()
     .isVisible({ timeout: 5000 }).catch(() => false);
 
   if (!isChallengePage) {
@@ -547,10 +548,10 @@ export async function dismissCloudflareChallenge(page: Page, maxWaitMs = 30000):
     console.log(`[helpers]   ✅ 已 force 点击页面 checkbox`);
   }
 
-  // 等待验证通过（验证页消失或跳转到目标页面）
+  // 等待验证通过（验证页消失或跳转到目标页面，两种拦截页文案都消失才算通过）
   try {
     await page.waitForFunction(() => {
-      return !document.body.innerText.includes('Verify you are human');
+      return !/Verify you are human|Just a moment/i.test(document.body?.innerText ?? '');
     }, { timeout: maxWaitMs });
     console.log(`[helpers]   ✅ Cloudflare 验证已通过`);
     return true;
