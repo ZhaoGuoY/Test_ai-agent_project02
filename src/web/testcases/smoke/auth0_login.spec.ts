@@ -331,6 +331,11 @@ async function enterAccountByClicks(page: Page): Promise<'ok' | 'bounced' | 'fai
 test.describe('Auth0 登录', () => {
 
   test('账号密码登录并验证账号页面', async ({ page }) => {
+    // ─ CI 环境跳过：GitHub Actions 数据中心 IP 被 Cloudflare/Shopify 边缘拒绝 multipass 会话令牌，
+    // 登录测试仅适用于住宅 IP 环境（本地执行）。CI 中跳过，避免确定性失败阻塞流水线。
+    // 本地执行不受影响（process.env.CI 未设置或为 'false'）。
+    test.skip(process.env.CI === 'true', 'CI 环境数据中心 IP 被 Cloudflare 拒绝 multipass 会话，仅本地执行');
+
     // 登录链含重定向链固定 20s 等待 + 观察落定 + 一次自愈重登，默认超时不够，放宽 3 倍；
     // 无论成功与否都会生效，不影响其他用例
     test.slow();
