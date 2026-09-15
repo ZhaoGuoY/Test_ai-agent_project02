@@ -107,8 +107,10 @@ async function performAuth0Login(page: Page): Promise<void> {
     await page.waitForTimeout(2000);
 
     // 点击 Continue 按钮：name="action"
+    // 模拟人类操作：点击前加 2-4s 随机延迟，避免"瞬间点击"触发风控
     const continueBtn = page.locator('button[name="action"]');
     await expect(continueBtn).toBeVisible({ timeout: 10000 });
+    await page.waitForTimeout(2000 + Math.floor(Math.random() * 2000));
     await continueBtn.click({ timeout: 10000 });
     console.log(`[Auth0] ✅ 已点击 Continue（邮箱页），等待 2s...`);
 
@@ -140,15 +142,17 @@ async function performAuth0Login(page: Page): Promise<void> {
       await agreeCheckbox.check({ timeout: 5000 });
       console.log(`[Auth0] ✅ 已勾选协议复选框`);
     }
-
+  
     // 等待 2 秒确保勾选状态同步
     await page.waitForTimeout(2000);
   });
-
-  // ========== 阶段4：点击 Continue 完成登录 ==========
+  
+  // ========== 阶段 4：点击 Continue 完成登录 ==========
   await test.step('点击 Continue 完成登录', async () => {
     const continueBtn = page.locator('button[name="action"]');
     await expect(continueBtn).toBeVisible({ timeout: 10000 });
+    // 模拟人类操作：点击前加 2-4s 随机延迟
+    await page.waitForTimeout(2000 + Math.floor(Math.random() * 2000));
     await continueBtn.click({ timeout: 10000 });
     console.log(`[Auth0] ✅ 已点击 Continue（密码页），固定等待 20s（期间脚本不发起任何跳转）...`);
 
@@ -330,6 +334,49 @@ test.describe('Auth0 登录', () => {
     // 登录链含重定向链固定 20s 等待 + 观察落定 + 一次自愈重登，默认超时不够，放宽 3 倍；
     // 无论成功与否都会生效，不影响其他用例
     test.slow();
+
+    // ─ 隐藏自动化特征：手动浏览器可登录但脚本失败，很可能是 Cloudflare/Shopify 检测到 Playwright 自动化指纹
+    // （navigator.webdriver=true、Blink AutomationControlled 标记等）→ 标记为 bot → multipass 请求被拒。
+    // 手动操作无此特征所以成功。在任意导航前注入脚本，伪装成真实浏览器。
+    // playwright.config.ts 已添加 --disable-blink-features=AutomationControlled（Blink 层），
+    // 此处覆盖 JS 层可见的自动化标记，双层防护。
+    await page.addInitScript(() => {
+      // 1. 覆盖 navigator.webdriver（最常被检测的标记）
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+      // 2. 清理 Playwright 注入的全局标记（部分站点会遍历 window 检测）
+      // @ts-ignore
+      delete window.__playwright;
+      // @ts-ignore
+      delete window.__pw_manual;
+      // @ts-ignore
+      delete window.__PW_REPLAY_SESSION;
+      // @ts-ignore
+      delete window.__playwright_internal__;
+      // 3. 覆盖 permissions/query 检测（部分站点通过 navigator.permissions.query 检测自动化）
+      const originalQuery = (window as any).navigator.permissions?.query;
+      if (originalQuery) {
+        (window as any).navigator.permissions.query = (params: any) =>
+          params.name === 'notifications'
+            ? Promise.resolve({ state: Notification.permission } as PermissionStatus)
+            : originalQuery(params);
+      }
+      // 4. 覆盖 plugins/languages 长度（Playwright 默认 plugins.length=0，真实浏览器>0）
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5],
+      });
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['zh-CN', 'zh', 'en-US', 'en'],
+      });
+    });
+
+    // ─ 阶段 0：先访问商店首页接受 Cookie 同意，确保后续登录链的 session cookie 不被阻止
+    // 手动登录时用户会自然看到并点击 Accept；脚本若等到阶段 5 才清理，登录链（阶段 4）执行期间
+    // cookie 同意横幅仍在 → 会话 cookie 可能被浏览器策略阻止 → multipass 302 回 /account/login
+    await test.step('阶段 0：先接受 Cookie 同意（在登录链之前）', async () => {
+      await gotoWithNetworkRetry(page, 'https://www.makera.com');
+      await dismissCookieConsent(page);
+      console.log(`[Auth0] ✅ Cookie 同意已接受，当前 URL: ${page.url()}`);
+    });
 
     // ─ Allure 报告信息：运行参数 ──
     parameter('STORE_ENTRY_URL', STORE_ENTRY_URL);
