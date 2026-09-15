@@ -258,7 +258,47 @@ export async function dismissNavDropdown(page: Page): Promise<void> {
 }
 
 /**
- * 关闭所有已知弹窗（幸运转盘 + 新手引导 + Google 翻译 + 客服悬浮按钮 + 导航 hover 下拉）
+ * 移除整页隐形拦截层（pt-experience 等体验脚本注入节点）
+ *
+ * 站点体验脚本注入的 pt-experience 节点会间歇性罩住整页（不可见但拦截
+ * pointer events），实测导致账号图标等导航栏按钮的点击被 Playwright 以
+ * "pt-experience intercepts pointer events" 反复重试直至超时；即使点击
+ * 侥幸派发成功，也可能落在拦截层上不触发跳转。
+ * 该层无视觉与交互价值，点击关键按钮前直接从 DOM 移除（仅删节点本身，
+ * 不触发导航、不影响页面其他功能）。
+ */
+export async function dismissExperienceOverlay(page: Page): Promise<void> {
+  const removed = await page.evaluate(() => {
+    const nodes = document.querySelectorAll('pt-experience, [class*="pt-experience"]');
+    nodes.forEach((el) => el.remove());
+    return nodes.length;
+  }).catch(() => 0);
+  if (removed > 0) console.log(`[helpers]   ✅ 已移除 pt-experience 拦截层（${removed} 个节点）`);
+}
+
+/**
+ * 关闭 Cookie 同意遮罩（Pandectes CMP 等）
+ *
+ * 站点底部的 Cookie 同意横幅（pandectes-cmp[aria-label="Cookie consent"]）
+ * 未接受时会罩住整页拦截 pointer events，实测导致购物车抽屉内 Check out
+ * 按钮点击被 "pandectes-cmp intercepts pointer events" 反复重试直至超时；
+ * 且 Playwright 重试失败用例时会新建 context，同意状态不保留，
+ * 表现为每轮重试确定性复现同一失败。点击 Accept 接受后即消失。
+ */
+export async function dismissCookieConsent(page: Page): Promise<void> {
+  const acceptBtn = page
+    .locator('pandectes-cmp, [aria-label="Cookie consent" i]')
+    .getByRole('button', { name: /accept all|^accept$|agree|allow all/i })
+    .first();
+  const visible = await acceptBtn.isVisible({ timeout: 1500 }).catch(() => false);
+  if (!visible) return;
+  await acceptBtn.click({ timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(500);
+  console.log(`[helpers]   ✅ 已关闭 Cookie 同意遮罩（点击 Accept）`);
+}
+
+/**
+ * 关闭所有已知弹窗（幸运转盘 + 新手引导 + Google 翻译 + 客服悬浮按钮 + 导航 hover 下拉 + 体验拦截层 + Cookie 同意遮罩）
  *
  * 导出供 spec 文件在点击关键按钮的每轮重试前循环调用，
  * 应对延迟弹出的浮窗遮挡导致的点击失败。
@@ -270,6 +310,8 @@ export async function dismissAllPopups(page: Page): Promise<void> {
   await dismissGoogleTranslate(page);
   await dismissChatWidget(page);
   await dismissNavDropdown(page);
+  await dismissExperienceOverlay(page);
+  await dismissCookieConsent(page);
   await page.waitForTimeout(300);
   console.log(`[helpers]  🧹 弹窗处理完成`);
 }
@@ -505,9 +547,9 @@ async function switchToTargetStore(page: Page, targetUrl: string): Promise<boole
 export async function dismissCloudflareChallenge(page: Page, maxWaitMs = 30000): Promise<boolean> {
   console.log(`[helpers]   🔄 检查 Cloudflare 真人验证...`);
 
-  // 检测是否在 Cloudflare 验证页（通过页面特征文本判断，覆盖 "Verify you are human" 与
-  // "Just a moment..." 两种拦截页文案，timeout 放宽到 5s 确保 DOM 渲染完成）
-  const isChallengePage = await page.locator('text=/Verify you are human|Just a moment/i').first()
+  // 检测是否在 Cloudflare 拦截页（通过页面特征文本判断，覆盖 Turnstile 验证页
+  // （"Verify you are human" / "Just a moment..."）与 403 硬拦截页两种文案，timeout 放宽到 5s 确保 DOM 渲染完成）
+  const isChallengePage = await page.locator('text=/Verify you are human|Just a moment|Sorry, you have been blocked|Attention Required|Checking your browser/i').first()
     .isVisible({ timeout: 5000 }).catch(() => false);
 
   if (!isChallengePage) {
@@ -548,10 +590,10 @@ export async function dismissCloudflareChallenge(page: Page, maxWaitMs = 30000):
     console.log(`[helpers]   ✅ 已 force 点击页面 checkbox`);
   }
 
-  // 等待验证通过（验证页消失或跳转到目标页面，两种拦截页文案都消失才算通过）
+  // 等待验证通过（拦截页消失或跳转到目标页面，验证页与硬拦截页两种文案都消失才算通过）
   try {
     await page.waitForFunction(() => {
-      return !/Verify you are human|Just a moment/i.test(document.body?.innerText ?? '');
+      return !/Verify you are human|Just a moment|Sorry, you have been blocked|Attention Required|Checking your browser/i.test(document.body?.innerText ?? '');
     }, { timeout: maxWaitMs });
     console.log(`[helpers]   ✅ Cloudflare 验证已通过`);
     return true;

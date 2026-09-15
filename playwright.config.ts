@@ -103,7 +103,14 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        // CI 无头走捆绑 Chromium 的"新无头模式"：Playwright 默认无头使用的是
+        // chromium-headless-shell，其浏览器指纹（sec-ch-ua、JA3 等）会被 Cloudflare
+        // 识别为机器人，导致 CI 在登录环节高频命中验证/拦截页（本地有头不命中，形成对照）；
+        // 新无头模式与真实 Chrome 指纹一致，可显著降低拦截率。本地有头运行不受影响。
+        channel: 'chromium',
+      },
     },
   ],
 });
