@@ -1,8 +1,8 @@
 // Auth0 登录冒烟测试 — 验证账号密码登录流程及登录成功后的账号页面
-// 步骤：从商店账号页发起登录（站点自带新鲜 state 事务）→ 输入邮箱 → 勾选协议 → 继续 → 输入密码 → 勾选协议 → 继续 → 轮询等待跳转回商店页 → 若已直接落在 /account 则跳过点击 → 否则等账号图标出现 + 导航静默 → 点击图标（重试5次，每次先清弹窗与拦截层，奇偶次普通/JS点击互补）→ 被弹回登录页则原地重登一次 → 失败直接导航兜底 → 断言邮箱
+// 步骤：从商店账号页发起登录（站点自带新鲜 state 事务）→ 输入邮箱 → 勾选协议 → 继续 → 输入密码 → 勾选协议 → 继续 → 固定等待 20s（期间脚本不发起任何跳转）→ 页面加载完毕后轮询观察重定向链自然落到商店页（排除未登录弹回页 /account/login）→ 若已直接落在 /account 则跳过点击 → 否则等账号图标出现 + 导航静默 → 点击图标（重试 5 次，每次先清弹窗与拦截层，奇偶次普通/JS 点击互补）→ 被弹回登录页则原地重登一次 → 失败直接导航兜底 → 断言邮箱
 import { test, expect, Page } from '@playwright/test';
 import { parameter } from 'allure-js-commons';
-import { dismissGuidePopup, dismissSpinPopup, dismissCloudflareChallenge, dismissExperienceOverlay } from './helpers';
+import { dismissGuidePopup, dismissSpinPopup, dismissCloudflareChallenge, dismissExperienceOverlay, dismissCookieConsent } from './helpers';
 
 // 登录入口 = 商店账号页（未登录时站点会自带新鲜 state + 事务 cookie 跳转到 Auth0 登录页）。
 // ⚠️ 不再硬编码带 state 的 Auth0 深链：旧 state 是一次性事务，商店回调校验事务 cookie 失败时
@@ -150,22 +150,38 @@ async function performAuth0Login(page: Page): Promise<void> {
     const continueBtn = page.locator('button[name="action"]');
     await expect(continueBtn).toBeVisible({ timeout: 10000 });
     await continueBtn.click({ timeout: 10000 });
-    console.log(`[Auth0] ✅ 已点击 Continue（密码页），等待 Auth0 处理登录...`);
+    console.log(`[Auth0] ✅ 已点击 Continue（密码页），固定等待 20s（期间脚本不发起任何跳转）...`);
 
-    // Auth0 登录后重定向到站点回调页：可能先落在 eu/global 的 /pages/auto0-lodding
-    // 中间页再 JS 跳转到目标商店页，全链路耗时数十秒。
+    // 固定等待 20s：云端更换执行网络后，登录重定向链（Auth0 → auto0 回调 → multipass → 商店）
+    // 推进明显变慢；点击后立即轮询判定会把中间 hop（如根 `/`）误报为完成，
+    // 随后阶段 5 的自行导航（点头像/兜底 goto）会打断进行中的回调链，会话建立失败
+    // （实测回调链会在根与 /account/login 间振荡数十秒才自然落定）。
+    // 期间脚本只等待：不 goto、不点击、不做任何会触发跳转的操作
+    await page.waitForTimeout(20000);
+
+    // 20s 期满后等当前文档加载完毕再继续下一步操作（回调中间页可能仍在加载）
+    await page.waitForLoadState('domcontentloaded');
+    console.log(`[Auth0] ✅ 20s 等待结束且页面加载完毕，当前 URL: ${page.url()}`);
+
+    // 再页内轮询观察 URL 自然落到真正商店页：跳过 auth0 域与 /pages/auto0 中间回调页，
+    // 并排除未登录弹回页 /account/login（旧判据把它误判为"登录跳转完成"，
+    // 阶段 5/6 会对着空登录表单操作直至邮箱断言失败）；轮询只观察、不导航。
     // ⚠️ 不能用 waitForURL(/makera\.com/)：无锚正则调用时会立即命中中间页域名，
     // 使 waitForURL 退化为"等当前文档 load 事件"（Playwright Frame.waitForURL 实现），
-    // 而商店首页 load 被第三方资源（pixel/iframe）拖很久不触发，造成假超时（本地与 CI 均实测命中）。
-    // 改为页内轮询 URL：跳过 auth0 域与中间回调页，到达真正商店页即返回，不依赖任何 load 状态；
-    // 再补一个 domcontentloaded 等待确保 DOM 可查询。
-    await page.waitForFunction(
-      () => /^(www|eu|global)\.makera\.com$/.test(location.hostname) && !location.pathname.startsWith('/pages/auto0'),
+    // 而商店首页 load 被第三方资源（pixel/iframe）拖很久不触发，造成假超时（本地与 CI 均实测命中）
+    const landed = await page.waitForFunction(
+      () => /^(www|eu|global)\.makera\.com$/.test(location.hostname)
+        && !location.pathname.startsWith('/pages/auto0')
+        && !location.pathname.startsWith('/account/login'),
       undefined,
       { timeout: 60000, polling: 500 },
-    );
+    ).then(() => true).catch(() => false);
     await page.waitForLoadState('domcontentloaded');
-    console.log(`[Auth0] ✅ 登录跳转完成，当前 URL: ${page.url()}`);
+    if (landed) {
+      console.log(`[Auth0] ✅ 登录跳转完成，当前 URL: ${page.url()}`);
+    } else {
+      console.warn(`[Auth0] ⚠️ 观察 60s 重定向链仍未落到商店账号页（当前 URL: ${page.url()}），交由阶段 5 判定会话状态`);
+    }
   });
 }
 
@@ -175,22 +191,29 @@ async function performAuth0Login(page: Page): Promise<void> {
 async function enterAccountByClicks(page: Page): Promise<'ok' | 'bounced' | 'failed'> {
   // 从商店 /account 发起的登录，回调后可能直接落回 /account（return_url），
   // 此时无需再点头像，直接视为成功
-  if (/^https:\/\/(www|eu|global)\.makera\.com\/account/.test(page.url())) {
+  if (/^https:\/\/(www|eu|global)\.makera\.com\/account(?!\/login)/.test(page.url())) {
     console.log(`[Auth0]   ✅ 登录后已直接落在账号页面，无需点击头像`);
     await page.waitForLoadState('domcontentloaded');
     return 'ok';
   }
+  // 落在 /account/login = 未登录弹回页（会话未建立），与弹回 Auth0 同等对待交由调用方重登
+  if (/^https:\/\/(www|eu|global)\.makera\.com\/account\/login/.test(page.url())) {
+    console.warn(`[Auth0]   ⚠️ 登录后落在未登录弹回页 /account/login（会话未建立）`);
+    return 'bounced';
+  }
 
-  // 登录态信号 = 导航栏账号图标（登录成功后任一商店 host 都会出现）。
+  // 导航栏账号图标：登录成功后任一商店 host 都会出现，但未登录态也存在，
+  // 故图标只说明导航栏已渲染（不是会话凭证，会话以落地 /account 为准）。
   // 回调可能经中间页落地且首页水合慢，直接等图标出现：出现即继续、会话未建立即明确失败，
   // 替代原"固定 20s 盲等 + 3s 可见性探测"，不再盲等浪费时间也不再误报"找不到图标"。
   const accountIcon = page.locator('svg.icon-account');
   const iconVisible = await accountIcon.waitFor({ state: 'visible', timeout: 60000 }).then(() => true).catch(() => false);
   if (!iconVisible) {
     if (/^https:\/\/auth0\./.test(page.url())) return 'bounced';
+    if (/^https:\/\/(www|eu|global)\.makera\.com\/account\/login/.test(page.url())) return 'bounced';
     throw new Error(`登录后 60s 内账号图标未出现，会话可能未建立，当前 URL: ${page.url()}`);
   }
-  console.log(`[Auth0]   ✅ 账号图标已出现（确认登录态），当前 URL: ${page.url()}`);
+  console.log(`[Auth0]   ✅ 账号图标已出现（仅说明导航栏已渲染，会话以落地 /account 为准），当前 URL: ${page.url()}`);
 
   // 等 URL 进入静默期（连续 5s 无导航）再点击：登录落地后站点自身还有
   // SPA 重定向链（utm/地域处理），导航期间派发的点击会被节点替换吞掉
@@ -230,6 +253,9 @@ async function enterAccountByClicks(page: Page): Promise<'ok' | 'bounced' | 'fai
     await dismissGuidePopup(page);
     // 再关闭幸运转盘
     await dismissSpinPopup(page);
+    // 再关闭 pandectes-cmp Cookie 同意遮罩：实测它罩住整页拦截 pointer events，
+    // 点头像会被遮罩吞掉（Global 结算点击同因失败过）
+    await dismissCookieConsent(page);
     // 再移除 pt-experience 隐形拦截层：实测它罩住导航栏，
     // 普通点击会被 "pt-experience intercepts pointer events" 反复重试直至超时
     await dismissExperienceOverlay(page);
@@ -270,7 +296,9 @@ async function enterAccountByClicks(page: Page): Promise<'ok' | 'bounced' | 'fai
     const startHref = page.url();
     const outcome = await page.waitForFunction(
       (start: string) => {
-        if (/^https:\/\/(www|eu|global)\.makera\.com\/account/.test(location.href)) return 'account';
+        if (/^https:\/\/(www|eu|global)\.makera\.com\/account(?!\/login)/.test(location.href)) return 'account';
+        // 点头像落到 /account/login = 未登录态被弹回（会话未建立），交由调用方重登
+        if (/^https:\/\/(www|eu|global)\.makera\.com\/account\/login/.test(location.href)) return 'bounced';
         if (/^https:\/\/auth0\./.test(location.href)) return 'bounced';
         if (location.href !== start) return 'diverted';
         return null;
@@ -299,6 +327,10 @@ async function enterAccountByClicks(page: Page): Promise<'ok' | 'bounced' | 'fai
 test.describe('Auth0 登录', () => {
 
   test('账号密码登录并验证账号页面', async ({ page }) => {
+    // 登录链含重定向链固定 20s 等待 + 观察落定 + 一次自愈重登，默认超时不够，放宽 3 倍；
+    // 无论成功与否都会生效，不影响其他用例
+    test.slow();
+
     // ─ Allure 报告信息：运行参数 ──
     parameter('STORE_ENTRY_URL', STORE_ENTRY_URL);
     parameter('LOGIN_EMAIL', LOGIN_EMAIL);
@@ -329,7 +361,7 @@ test.describe('Auth0 登录', () => {
 
       // ⚠️ 失败必须抛错：旧版此处静默 return 会跳过邮箱断言，把失败误报为通过
       try {
-        await page.waitForURL(/^https:\/\/(www|eu|global)\.makera\.com\/account/, {
+        await page.waitForURL(/^https:\/\/(www|eu|global)\.makera\.com\/account(?!\/login)/, {
           waitUntil: 'domcontentloaded',
           timeout: 15000,
         });
