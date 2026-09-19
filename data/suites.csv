@@ -1,0 +1,8 @@
+"DESCRIPTION","DURATION IN MS","NAME","PARENT SUITE","START TIME","STATUS","STOP TIME","SUB SUITE","SUITE","TEST CLASS","TEST METHOD"
+"","51095","商品加入购物车","chromium","2026-09-19","passed","2026-09-19","EU 站点","eu_carvera.spec.ts","",""
+"","265","账号密码登录并验证账号页面","chromium","2026-09-19","skipped","2026-09-19","Auth0 登录","auth0_login.spec.ts","",""
+"","12150","商品正常进入结算页","chromium","2026-09-19","passed","2026-09-19","EU 站点","eu_carvera.spec.ts","",""
+"","13486","商品正常进入结算页","chromium","2026-09-19","passed","2026-09-19","US 站点","us_carvera.spec.ts","",""
+"","61686","商品加入购物车","chromium","2026-09-19","passed","2026-09-19","US 站点","us_carvera.spec.ts","",""
+"","21036","商品正常进入结算页","chromium","2026-09-19","passed","2026-09-19","Global 站点","global_carvera.spec.ts","",""
+"","49355","商品加入购物车","chromium","2026-09-19","passed","2026-09-19","Global 站点","global_carvera.spec.ts","",""
