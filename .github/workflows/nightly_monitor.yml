@@ -14,10 +14,10 @@ on:
   push:
     branches: [ "master" ]
 
-  # 定时触发：UTC 23:45 = 北京时间 7:45，接受平台排队延迟（多数在 9 点前完成）；
+  # 定时触发：UTC 23:30 = 北京时间 7:30，接受平台排队延迟（多数在 9 点前完成）；
   # ⚠️ GitHub schedule 仅在默认分支（master）上的工作流文件生效，勿只改其他分支。
   schedule:
-  - cron: '45 23 * * *'
+  - cron: '30 23 * * *'
 
   # 手动触发（用于测试和调试）
   workflow_dispatch:
