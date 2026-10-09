@@ -330,12 +330,14 @@ async function enterAccountByClicks(page: Page): Promise<'ok' | 'bounced' | 'fai
 
 test.describe('Auth0 登录', () => {
 
+  // ⏸️ 暂停执行：Shopify 安全拦截导致登录流程不稳定，暂时停止该用例。
+  // 恢复时取消下方注释即可。
+  /*
   test('账号密码登录并验证账号页面', async ({ page }) => {
-
     // 登录链含重定向链固定 20s 等待 + 观察落定 + 一次自愈重登，默认超时不够，放宽 3 倍；
     // 无论成功与否都会生效，不影响其他用例
     test.slow();
-
+  
     // ─ 隐藏自动化特征：手动浏览器可登录但脚本失败，很可能是 Cloudflare/Shopify 检测到 Playwright 自动化指纹
     // （navigator.webdriver=true、Blink AutomationControlled 标记等）→ 标记为 bot → multipass 请求被拒。
     // 手动操作无此特征所以成功。在任意导航前注入脚本，伪装成真实浏览器。
@@ -369,7 +371,7 @@ test.describe('Auth0 登录', () => {
         get: () => ['zh-CN', 'zh', 'en-US', 'en'],
       });
     });
-
+  
     // ─ 阶段 0：先访问商店首页接受 Cookie 同意，确保后续登录链的 session cookie 不被阻止
     // 手动登录时用户会自然看到并点击 Accept；脚本若等到阶段 5 才清理，登录链（阶段 4）执行期间
     // cookie 同意横幅仍在 → 会话 cookie 可能被浏览器策略阻止 → multipass 302 回 /account/login
@@ -378,14 +380,14 @@ test.describe('Auth0 登录', () => {
       await dismissCookieConsent(page);
       console.log(`[Auth0] ✅ Cookie 同意已接受，当前 URL: ${page.url()}`);
     });
-
+  
     // ─ Allure 报告信息：运行参数 ──
     parameter('STORE_ENTRY_URL', STORE_ENTRY_URL);
     parameter('LOGIN_EMAIL', LOGIN_EMAIL);
-
+  
     // 阶段1-4：完成 Auth0 账号密码登录并跳回商店页
     await performAuth0Login(page);
-
+  
     // ========== 阶段5：点击账号图标进入我的账户（重试5次，每次先清弹窗与拦截层，奇偶次普通/JS点击互补，失败直接导航兜底）==========
     await test.step('点击头像图标进入我的账户', async () => {
       let enterResult = await enterAccountByClicks(page);
@@ -397,16 +399,16 @@ test.describe('Auth0 登录', () => {
         await performAuth0Login(page);
         enterResult = await enterAccountByClicks(page);
       }
-
+  
       if (enterResult !== 'ok') {
         // 点击仍失败的兜底：直接导航 /account（会话 cookie 才是登录态的真正判据）；
         // 若会话真未建立，/account 会被服务端弹回登录页，下面的等待与邮箱断言仍会照常失败，不会误报通过
         const host = new URL(page.url()).hostname;
         const accountUrl = /(www|eu|global)\.makera\.com/.test(host) ? `https://${host}/account` : 'https://www.makera.com/account';
-        console.warn(`[Auth0]   ⚠️ 点击仍未到达 /account（结果: ${enterResult}），尝试直接导航兜底: ${accountUrl}`);
+        console.warn(`[Auth0]   ️ 点击仍未到达 /account（结果: ${enterResult}），尝试直接导航兜底: ${accountUrl}`);
         await page.goto(accountUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
       }
-
+  
       // ⚠️ 失败必须抛错：旧版此处静默 return 会跳过邮箱断言，把失败误报为通过
       try {
         await page.waitForURL(/^https:\/\/(www|eu|global)\.makera\.com\/account(?!\/login)/, {
@@ -418,7 +420,7 @@ test.describe('Auth0 登录', () => {
       }
       console.log(`[Auth0] ✅ 已进入账号页面: ${page.url()}`);
     });
-
+  
     // ========== 阶段6：断言账号页面显示登录邮箱 ==========
     await test.step('断言账号页面显示登录邮箱', async () => {
       const emailOnPage = page.getByText(LOGIN_EMAIL.toLowerCase()).first();
@@ -426,5 +428,6 @@ test.describe('Auth0 登录', () => {
       console.log(`[Auth0] ✅ 账号页面显示登录邮箱: ${LOGIN_EMAIL.toLowerCase()}`);
     });
   });
+  */
 
 });
