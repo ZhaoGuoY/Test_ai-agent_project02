@@ -213,27 +213,15 @@ class FeishuNotifier:
 
     def _build_test_case_list(self, case_details: Dict[str, list]) -> str:
         """
-        构建「测试用例」明细文本，各用例结果从参数动态获取
-
-        格式：
-        1. auth0登录是否成功(shopify安全拦截暂时停止)
-        2. 美国站加入购物车 / ✅
-        3. 美国站进入结算页 / ✅
-        ...
+        构建「测试用例」纯列表文本（不含状态图标，结果在「各站点结果」体现）
         """
-        site_stats = {"US 站点": "美国站", "EU 站点": "欧洲站", "Global 站点": "全球站"}
-        lines = ["1. auth0登录是否成功(shopify安全拦截暂时停止)"]
-        num = 2
-        for site_key, site_label in site_stats.items():
-            cases = {c["category"]: c["passed"] for c in case_details.get(site_key, [])}
-            for cat in ["加入购物车", "进入结算页", "搜索功能"]:
-                if cat in cases:
-                    icon = "✅" if cases[cat] else "❌"
-                    lines.append(f"{num}. {site_label}{cat} / {icon}")
-                else:
-                    lines.append(f"{num}. {site_label}{cat}")
-                num += 1
-        return "\n".join(lines)
+        return (
+            "1. auth0登录是否成功(shopify安全拦截暂时停止)\n"
+            "2. 美国站（加购功能，进入结算页验证）\n"
+            "3. 欧洲站（加购功能，进入结算页验证）\n"
+            "4. 全球站（加购功能，进入结算页验证）\n"
+            "5. us、eu、global站点搜索功能"
+        )
 
     def send_card(self, stats: Dict[str, Any], title: str = "独立站监控测试报告", heal_info: str = "") -> bool:
         """
