@@ -108,6 +108,11 @@ class FeishuNotifier:
                 # 只有既非失败也非跳过的才算真正通过
                 site_stats[site_name]["passed"] += 1
 
+        # 逐用例明细（供卡片「各站点结果」和「测试用例」动态展示）
+        case_details: Dict[str, list] = {}
+        for tc in root.iter("testcase"):
+            self._categorize_case(tc, case_details)
+
         stats = {
             "tests": tests,
             "failures": failures,
@@ -116,10 +121,119 @@ class FeishuNotifier:
             "pass": passed,
             "effective_failures": effective_failures,
             "site_stats": site_stats,
+            "case_details": case_details,
         }
 
         logger.info(f"测试统计: {stats}")
         return stats
+
+    @staticmethod
+    def _categorize_case(tc: ET.Element, case_details: Dict[str, list]) -> None:
+        """
+        从 testcase 元素提取站点和用例类别，归类到 case_details
+
+        类别映射：
+        - 加入购物车 ← name 含 "加入购物车"
+        - 进入结算页 ← name 含 "结算" 或 "checkout"（不区分大小写）
+        - 搜索功能 ← name 含 "搜索"
+        """
+        name = tc.get("name", "")
+        site_name = name.split("›")[0].strip() if "›" in name else ""
+        case_name = name.split("›")[1].strip() if "›" in name else name
+
+        if not site_name:
+            return
+
+        has_failure = tc.find("failure") is not None or tc.find("error") is not None
+        is_skipped = tc.find("skipped") is not None
+        passed = not has_failure and not is_skipped
+
+        if "加入购物车" in case_name:
+            category = "加入购物车"
+        elif "结算" in case_name or "checkout" in case_name.lower():
+            category = "进入结算页"
+        elif "搜索" in case_name:
+            category = "搜索功能"
+        else:
+            return
+
+        if site_name not in case_details:
+            case_details[site_name] = []
+        case_details[site_name].append({"category": category, "passed": passed})
+
+    def _build_site_detail(self, case_details: Dict[str, list]) -> str:
+        """
+        构建「各站点结果」明细文本
+
+        格式：✅ **US站** 加入购物车 / ✅  进入结算页 / ✅  搜索功能
+        """
+        if not case_details:
+            return "无站点明细"
+
+        site_order = ["US 站点", "EU 站点", "Global 站点"]
+        category_order = ["加入购物车", "进入结算页", "搜索功能"]
+        lines = []
+
+        for site_name in site_order:
+            if site_name not in case_details:
+                continue
+            site_label = site_name.replace(" 站点", "站")
+            cases = {c["category"]: c["passed"] for c in case_details[site_name]}
+            parts = []
+            all_pass = True
+            for cat in category_order:
+                if cat in cases:
+                    icon = "✅" if cases[cat] else "❌"
+                    parts.append(f"{cat} / {icon}")
+                    if not cases[cat]:
+                        all_pass = False
+            if parts:
+                site_icon = "✅" if all_pass else "❌"
+                lines.append(f"{site_icon} **{site_label}** " + "  ".join(parts))
+
+        # 处理未预定义站点的兜底
+        for site_name, cases_list in case_details.items():
+            if site_name in site_order:
+                continue
+            site_label = site_name.replace(" 站点", "站")
+            cases = {c["category"]: c["passed"] for c in cases_list}
+            parts = []
+            all_pass = True
+            for cat in category_order:
+                if cat in cases:
+                    icon = "✅" if cases[cat] else "❌"
+                    parts.append(f"{cat} / {icon}")
+                    if not cases[cat]:
+                        all_pass = False
+            if parts:
+                site_icon = "✅" if all_pass else "❌"
+                lines.append(f"{site_icon} **{site_label}** " + "  ".join(parts))
+
+        return "\n".join(lines) if lines else "无站点明细"
+
+    def _build_test_case_list(self, case_details: Dict[str, list]) -> str:
+        """
+        构建「测试用例」明细文本，各用例结果从参数动态获取
+
+        格式：
+        1. auth0登录是否成功(shopify安全拦截暂时停止)
+        2. 美国站加入购物车 / ✅
+        3. 美国站进入结算页 / ✅
+        ...
+        """
+        site_stats = {"US 站点": "美国站", "EU 站点": "欧洲站", "Global 站点": "全球站"}
+        lines = ["1. auth0登录是否成功(shopify安全拦截暂时停止)"]
+        num = 2
+        for site_key, site_label in site_stats.items():
+            cases = {c["category"]: c["passed"] for c in case_details.get(site_key, [])}
+            for cat in ["加入购物车", "进入结算页", "搜索功能"]:
+                if cat in cases:
+                    icon = "✅" if cases[cat] else "❌"
+                    lines.append(f"{num}. {site_label}{cat} / {icon}")
+                else:
+                    lines.append(f"{num}. {site_label}{cat}")
+                num += 1
+        return "\n".join(lines)
 
     def send_card(self, stats: Dict[str, Any], title: str = "独立站监控测试报告", heal_info: str = "") -> bool:
         """
@@ -154,28 +268,8 @@ class FeishuNotifier:
             header_color = "red"
             header_text = f"\u274c {title} - \u5b58\u5728\u5931\u8d25 - Makera"
 
-        # 构建各站点结果明细
-        site_stats = stats.get("site_stats", {})
-        site_lines = []
-        if site_stats:
-            for site_name, s in site_stats.items():
-                # 跳过用例（如 Auth0 登录因 CI 数据中心 IP 被 Shopify 安全拦截）显示黄色警告，
-                # 实际失败显示红叉，全通过显示绿勾
-                if s["failed"] == 0:
-                    status_icon = "✅"
-                elif s["passed"] == 0 and s["total"] == s["failed"]:
-                    # 全部失败/跳过：检查是否仅为跳过（无实际 failure 子元素）
-                    # 这里简化处理：如果站点名包含 Auth0 且全部未通过，视为跳过用黄色警告
-                    if "Auth0" in site_name:
-                        status_icon = "⚠️"
-                    else:
-                        status_icon = "❌"
-                else:
-                    status_icon = "❌"
-                site_lines.append(f"{status_icon} **{site_name}**: {s['passed']}/{s['total']} 通过")
-            site_detail = "\n".join(site_lines)
-        else:
-            site_detail = "无站点明细"
+        site_detail = self._build_site_detail(stats.get("case_details", {}))
+        test_case_list = self._build_test_case_list(stats.get("case_details", {}))
 
         card = {
             "config": {"wide_screen_mode": True},
@@ -246,7 +340,7 @@ class FeishuNotifier:
                 {
                     "tag": "div",
                     "text": {
-                        "content": "**测试用例**\n1. auth0登录是否成功(shopify安全拦截暂时停止)\n2. 美国站（加购功能，进入结算页验证）\n3. 欧洲站（加购功能，进入结算页验证）\n4. 全球站（加购功能，进入结算页验证）",
+                        "content": f"**测试用例**\n{test_case_list}",
                         "tag": "lark_md"
                     }
                 },
