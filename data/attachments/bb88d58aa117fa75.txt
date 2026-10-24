@@ -1,0 +1,20 @@
+[US] 当前 host 已匹配目标，无需切换
+[US] 二次校验通过，当前 host 已匹配目标
+[dismissPopups]  开始关闭所有弹窗...
+[dismissPopups]   🔄 检查新手引导弹窗(New to CNC)...
+[dismissPopups]   ℹ️ 未发现新手引导弹窗
+[dismissPopups]   🔄 检查 Google 翻译弹窗...
+[dismissPopups]   ✅ 已暴力移除 Google 翻译弹窗
+[dismissPopups]   🔄 检查客服悬浮按钮...
+[dismissPopups]   ✅ 客服悬浮按钮处理完成
+[dismissPopups]   🔄 检查顶部导航下拉...
+[dismissPopups]   ✅ 顶部导航下拉处理完成
+[dismissPopups]   ✅ 已移除 pt-experience 拦截层（1 个节点）
+[dismissPopups]   ✅ 已关闭 Cookie 同意遮罩（点击 Accept）
+[dismissPopups]   🔄 检查幸运转盘...
+[dismissPopups]   ℹ️ 未发现幸运转盘
+[dismissPopups]   弹窗处理完成
+[US] 找到 9 个商品（选择器: .product-card a.product-card__title）
+[US]  第1个商品: Makera Z1 4th Axis Module
+[US] 📦 第2个商品: Carvera Air 4th Axis Module
+[US] ✅ 前2个商品标题均包含关键词 "4th Axis Module"
