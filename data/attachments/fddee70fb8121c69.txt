@@ -1,0 +1,2 @@
+[helpers]   ⚠️ Cloudflare 验证超时未通过（30000ms），可能需要人工介入
+[helpers] ⚠️ Cloudflare 验证未通过，后续测试可能受影响
